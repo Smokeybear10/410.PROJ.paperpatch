@@ -1,0 +1,125 @@
+[INFO] [KRS] <-- GenerateAssistantResponseCommand done totalEvents=10
+Let me read the relevant files first.
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+Now let me read the kiro specs for context:
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+Now I have a thorough understanding of the codebase style. Let me implement the module. I'll plan it carefully before writing:
+
+**Plan:**
+1. `_open_docx()` — ZIP validation mirroring `_open_zip` from workbook.py
+2. `_safe_parse_xml()` — reuse pattern from `_safe_parse` (no network, no DTD, no entities)
+3. `_check_docx_package()` — reject macros, signatures, encryption, path traversal, duplicates
+4. `_load_document_xml()` — parse `word/document.xml` from the OOXML package
+5. `inspect_docx()` — enumerate `w:p` paragraphs in body, classify editable/protected
+6. `rebase_edit()` — three-way paragraph alignment + character diff span mapping
+7. `export_docx()` — apply tracked revisions to `word/document.xml`, verify integrity
+[tool] Write File
+[tool] status: Pending
+[tool] status: Completed
+Now let me verify the file is syntactically valid by checking for any obvious issues:
+[tool] Code Intelligence
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+The file looks well-formed. Let me do one quick structural scan to ensure I haven't left unbalanced constructs:
+[tool] Grep Search
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Grep Search
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Grep Search
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Code Intelligence
+[tool] status: Completed
+All 33 symbols resolve cleanly. Let me do one final read of the key `_apply_tracked_edit_to_para` function to confirm its logic is tight, particularly the `start == end` pure insertion path:
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+The logic looks correct. There's one edge case I want to fix: when `start == end` and `start` falls mid-run, `insert_after_child_idx` is set to `run_positions[split_run_idx]` (the left run), but the insertion should go *after* the left run. Let me verify by re-reading that section:
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+The `insert_after_child_idx = run_positions[split_run_idx]` is correct — after the split, `run_positions[split_run_idx]` points to the left run's position in `children_before`, and Step 3 inserts `w:ins` after visiting that element (the `i == insert_after_child_idx` guard fires when processing the left run). That's the right behaviour: `w:ins` goes between left and right halves of the split run.
+
+The implementation is complete. Here's an honest account of what was implemented and its limitations.
+
+---
+
+## Implemented: `backend/docx_engine.py`
+
+### Public functions
+
+**`inspect_docx(data: bytes) -> dict`**
+- Opens and validates the DOCX ZIP (10 MB compressed / 100 MB expanded / 2 000 members).
+- Rejects macro-enabled, VBA, encrypted, digitally-signed, and path-traversal packages.
+- Parses `word/document.xml` with `no_network=True`, no DTD, no entity expansion.
+- Enumerates every `w:p` in `body` in document order; IDs are `p0`, `p1`, … globally.
+- Returns `title` (from `docProps/core.xml` if present), `paragraphs`, and `warnings`.
+- Editable iff: direct child of `w:body`, contains only `w:r` runs (with `w:t`/`w:rPr`/`w:tab`), no protect tags (`w:fldChar`, `w:hyperlink`, `w:drawing`, `w:ins`, `w:del`, `w:sdt`, bookmarks, etc.), no `w:br`. Empty paragraphs (no runs) are readable but non-editable.
+
+**`rebase_edit(base, current, edit) -> dict`**
+- Locates the base paragraph by ID, then maps it to current via three strategies in order:
+  1. Same ID with identical text → trivial 1:1 offset mapping.
+  2. Unique exact text match anywhere in current (handles moves).
+  3. Unique similar paragraph (LCS ratio ≥ 0.60) + character-level diff to map offsets.
+- Returns `conflict` when: the mapped span changed, an insertion lands on an ambiguous boundary, diff is too large (>1 M cell table), or multiple paragraphs tie on similarity.
+- Returns `missing` when: the paragraph cannot be located uniquely, bounds are violated, or parse fails.
+- Returns `protected` when the current paragraph is non-editable.
+- Returns `already_applied` when the current span already equals `replacement` and the base span did not.
+
+**`export_docx(current, edits) -> tuple[bytes, dict]`**
+- Validates all edits: paragraphs must be editable, offsets in-bounds, no overlap within a paragraph, no two insertions at the same point.
+- Applies edits to the in-memory lxml tree in reverse start-offset order per paragraph.
+- Splits runs only as needed at boundaries; preserves `w:rPr` on each split/deleted/inserted piece.
+- Emits genuine `w:del`/`w:ins` with `w:id`, `w:author`, `w:date`; uses `w:delText` inside `w:del`.
+- IDs are globally unique (seeded from existing document, monotonically incremented).
+- Rebuilds ZIP replacing only `word/document.xml`; all other parts are bit-identical.
+- Runs independent verification before returning: reject-all restores original text; accept-all yields expected final text; untouched paragraphs are byte-identical.
+- Returns `{status:"passed", currentHash, outputHash, changedParagraphCount, revisionCount, unchangedPartCount, totalPartCount}`.
+
+### Limitations (honest)
+
+1. **Multi-run deletions emit one `w:del` per original run**, not a single merged `w:del`. Word renders this correctly but it's more verbose than the minimum possible markup.
+2. **`w:tab` in a run contributes empty text** — the tab character does not appear in `text` or offsets. If a paragraph's visible text omits tabs, offsets will be wrong. Real Word DOCX often uses `w:tab` within text; this is a known gap.
+3. **Similarity threshold (0.60) is fixed** — paragraphs that changed more than 40% from base may fall through to `missing` even when the intent is recoverable.
+4. **LCS diff is O(m·n)** — capped at 1 000 000 cells; paragraphs longer than ~1 000 characters each will fall back to a fast prefix/suffix approximation for similarity scoring and return `conflict` for offset mapping (safe but lossy).
+5. **No header/footer/footnote support** — `inspect_docx` only enumerates `w:body` paragraphs. Paragraphs in headers, footers, footnotes, endnotes, comments, text boxes are not visible.
+6. **No relationship-resolution for external content** — `word/document.xml` only; relationships are never fetched.
+7. **Style name is the `w:val` attribute** — not the display name from `word/styles.xml`. On many documents this is `Heading1` rather than `Heading 1`.
+8. **No paragraph-split/merge** — edits cannot insert newlines or join paragraphs; replacements are purely within a single paragraph's flat text.
+9. **`w:ins` for pure insertions** borrows `w:rPr` from the adjacent run; if no run exists (empty paragraph), no run properties are attached.
+10. **No claim of arbitrary DOCX support** — complex documents with revision bars, change-tracking already enabled, or `w:rPrChange` / `w:pPrChange` elements will be classified non-editable rather than silently mangled.
