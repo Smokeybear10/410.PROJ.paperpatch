@@ -631,6 +631,17 @@ export default function App() {
           </nav>
         )}
         <div className="topbar-end">
+          <a
+            className="text-button"
+            href="/?mode=documents"
+            aria-disabled={Boolean(busy) || hasUnsavedReading || undefined}
+            tabIndex={busy || hasUnsavedReading ? -1 : undefined}
+            onClick={(event) => {
+              if (busy || hasUnsavedReading) event.preventDefault();
+            }}
+          >
+            Word documents <ArrowRight size={14} />
+          </a>
           <span className="local-badge">
             <span
               className={health ? "connection-dot" : "connection-dot waiting"}

@@ -300,6 +300,9 @@ input[hidden] {
   text-decoration: underline;
   text-underline-offset: 4px;
 }
+.topbar-end > a.text-button {
+  color: inherit;
+}
 .icon-button,
 .button.icon-button {
   width: 44px;

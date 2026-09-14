@@ -286,6 +286,60 @@ def create_edit(session: dict, paragraph_id: str, start: int, end: int, replacem
     return edit
 
 
+@router.get('')
+def recent_documents() -> list[dict]:
+    with LOCK:
+        paths = []
+        for path in DATA.glob('*/session.json'):
+            if not re.fullmatch(r'[a-f0-9]{32}', path.parent.name):
+                continue
+            try:
+                paths.append((path.stat().st_mtime, path))
+            except OSError:
+                continue
+        summaries = []
+        for modified, path in sorted(paths, key=lambda item: item[0], reverse=True):
+            try:
+                session = json.loads(path.read_text())
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if (not isinstance(session, dict) or session.get('id') != path.parent.name
+                    or any(not isinstance(session.get(key), str) or not session[key]
+                           for key in ('filename', 'currentFilename'))
+                    or type(session.get('revision')) is not int or session['revision'] < 0
+                    or not isinstance(session.get('_manifest'), dict)
+                    or not isinstance(session.get('pages'), list)
+                    or not isinstance(session.get('edits'), list)
+                    or not isinstance(session.get('scans'), list)
+                    or not (path.parent / 'baseline.docx').is_file()
+                    or not (path.parent / 'current.docx').is_file()):
+                continue
+            edits, scans = session['edits'], session['scans']
+            if (any(not isinstance(edit, dict) or not isinstance(edit.get('id'), str)
+                    or 'decision' not in edit or edit['decision'] not in (None, 'paper', 'current')
+                    for edit in edits)
+                    or any(not isinstance(scan, dict) or not isinstance(scan.get('id'), str)
+                           or type(scan.get('reviewed')) is not bool
+                           for scan in scans)):
+                continue
+            pending = PENDING_CAPTURES.get(session['id'], 0)
+            unresolved = sum(edit.get('decision') is None or edit.get('decision') == 'paper' and (
+                not edit.get('confirmed') or edit.get('status') in ('missing', 'protected', 'overlap')
+                or any(edit.get(key) is None for key in ('currentParagraphId', 'currentStart', 'currentEnd'))
+            ) for edit in edits)
+            summaries.append(dict(
+                id=session['id'], filename=session['filename'], currentFilename=session['currentFilename'],
+                updatedAt=datetime.fromtimestamp(modified, tz=timezone.utc).isoformat(),
+                editCount=len(edits), pendingCount=unresolved + sum(not scan['reviewed'] for scan in scans) + pending,
+                scanCount=len(scans), pendingCaptures=pending,
+                kind='trial' if session.get('trial') else 'example' if session.get('demo') else 'document',
+                exported=isinstance(session.get('export'), dict) and not pending,
+            ))
+            if len(summaries) == 20:
+                break
+        return summaries
+
+
 @router.post('')
 def upload_document(file: UploadFile) -> dict:
     with LOCK:
