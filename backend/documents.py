@@ -8,7 +8,7 @@ from uuid import uuid4
 import json
 import re
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -287,18 +287,21 @@ def create_edit(session: dict, paragraph_id: str, start: int, end: int, replacem
 
 
 @router.get('')
-def recent_documents() -> list[dict]:
+def recent_documents(before: str | None = Query(default=None, pattern=r'^\d{1,20}:[a-f0-9]{32}$')) -> list[dict]:
     with LOCK:
+        boundary = (int(before.split(':')[0]), before.split(':')[1]) if before else None
         paths = []
         for path in DATA.glob('*/session.json'):
             if not re.fullmatch(r'[a-f0-9]{32}', path.parent.name):
                 continue
             try:
-                paths.append((path.stat().st_mtime, path))
+                modified = path.stat().st_mtime_ns
+                if boundary is None or (modified, path.parent.name) < boundary:
+                    paths.append((modified, path))
             except OSError:
                 continue
         summaries = []
-        for modified, path in sorted(paths, key=lambda item: item[0], reverse=True):
+        for modified, path in sorted(paths, key=lambda item: (item[0], item[1].parent.name), reverse=True):
             try:
                 session = json.loads(path.read_text())
             except (OSError, UnicodeError, json.JSONDecodeError):
@@ -329,7 +332,8 @@ def recent_documents() -> list[dict]:
             ) for edit in edits)
             summaries.append(dict(
                 id=session['id'], filename=session['filename'], currentFilename=session['currentFilename'],
-                updatedAt=datetime.fromtimestamp(modified, tz=timezone.utc).isoformat(),
+                updatedAt=datetime.fromtimestamp(modified / 1_000_000_000, tz=timezone.utc).isoformat(),
+                cursor=f'{modified}:{session["id"]}',
                 editCount=len(edits), pendingCount=unresolved + sum(not scan['reviewed'] for scan in scans) + pending,
                 scanCount=len(scans), pendingCaptures=pending,
                 kind='trial' if session.get('trial') else 'example' if session.get('demo') else 'document',
