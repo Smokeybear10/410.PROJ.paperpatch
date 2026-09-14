@@ -20,6 +20,7 @@ DATA = Path(__file__).resolve().parent.parent / '.data' / 'documents'
 DATA.mkdir(parents=True, exist_ok=True)
 LOCK = RLock()
 SCANNERS = BoundedSemaphore(2)
+PENDING_CAPTURES: dict[str, int] = {}
 router = APIRouter(prefix='/api/documents')
 
 
@@ -91,6 +92,9 @@ def save(session: dict) -> None:
 
 def present(session: dict) -> dict:
     result = {key: value for key, value in session.items() if not key.startswith('_')}
+    result['pendingCaptures'] = PENDING_CAPTURES.get(session['id'], 0)
+    if result['pendingCaptures']:
+        result['export'] = None
     pages = {page['number']: page for page in session['_manifest']['pages']}
     result['pages'] = [{**page, 'textRanges': page_text_ranges(pages[page['number']])}
                        for page in session['pages']]
@@ -385,6 +389,7 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
         raise ValueError('Enter a reviewer name of up to 80 characters.')
     if not SCANNERS.acquire(blocking=False):
         raise HTTPException(429, 'Two pages are already being read. Try again when one finishes.')
+    registered = False
     try:
         data = upload_bytes(file)
         digest = sha256(data).hexdigest()
@@ -399,6 +404,8 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
             manifest = session['_manifest']
             scan_id = uuid4().hex
             output = document_dir(sid) / 'scans' / scan_id
+            PENDING_CAPTURES[sid] = PENDING_CAPTURES.get(sid, 0) + 1
+            registered = True
         output.mkdir(parents=True, exist_ok=True)
         suffix = '.jpg' if data.startswith(b'\xff\xd8\xff') else '.png' if data.startswith(b'\x89PNG') else '.webp' if data[:4] == b'RIFF' and data[8:12] == b'WEBP' else '.bin'
         upload_name = 'source-upload' + suffix
@@ -454,8 +461,17 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
                             ocrAlternatives=proposal.get('ocrAlternatives', []))
             session['scans'].append(scan)
             changed(session)
+            PENDING_CAPTURES[sid] -= 1
+            if not PENDING_CAPTURES[sid]:
+                del PENDING_CAPTURES[sid]
+            registered = False
             return present(session)
     finally:
+        if registered:
+            with LOCK:
+                PENDING_CAPTURES[sid] -= 1
+                if not PENDING_CAPTURES[sid]:
+                    del PENDING_CAPTURES[sid]
         SCANNERS.release()
 
 
@@ -579,6 +595,8 @@ def export_document(sid: str, body: ExportBody) -> dict:
     with LOCK:
         session = load(sid)
         require_revision(session, body.revision)
+        if PENDING_CAPTURES.get(sid, 0):
+            raise HTTPException(409, 'A source page is still being read. Wait for capture to finish before exporting.')
         if session['currentHash'] != body.currentHash:
             raise HTTPException(409, 'The current draft changed. Review the new text before exporting.')
         path = document_dir(sid)
