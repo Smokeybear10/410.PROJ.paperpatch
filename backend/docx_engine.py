@@ -219,9 +219,10 @@ def _classify_paragraph(para: ET._Element, is_top_level: bool) -> tuple[bool, st
     for run in runs:
         if any(child.tag not in (_WNS + "rPr", _WNS + "t") for child in run):
             return False, "contains non-text runs (such as tabs or fields)"
-        texts = run.findall(_WNS + "t")
-        if len(texts) != 1 or not texts[0].text or len(run.findall(_WNS + "rPr")) > 1:
-            return False, "contains empty or compound text runs"
+        if len(run.findall(_WNS + "rPr")) > 1:
+            return False, "contains duplicate run properties"
+    if not _para_text(para):
+        return False, "empty paragraph"
     if len(_para_text(para)) > _MAX_PARA_CHARS:
         return False, "paragraph exceeds supported text length"
     return True, None
@@ -541,11 +542,44 @@ def _run_text_spans(para: ET._Element) -> list[tuple[int, int, ET._Element]]:
     return spans
 
 
-def _run_slice(run: ET._Element, start: int, end: int) -> ET._Element:
+def _run_slice(run: ET._Element, start: int, end: int, include_end: bool = False) -> ET._Element | None:
     copied = deepcopy(run)
-    text = copied.find(_WNS + "t")
-    text.text = (text.text or "")[start:end]
-    text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    texts = copied.findall(_WNS + "t")
+    if not texts:
+        return copied if start == end == 0 and include_end else None
+    offset = 0
+    for text in texts:
+        value = text.text or ""
+        finish = offset + len(value)
+        left, right = max(start, offset), min(end, finish)
+        keep_empty = not value and (start <= offset < end or include_end and offset == end)
+        if left < right:
+            if left != offset or right != finish:
+                text.text = value[left - offset:right - offset]
+                text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        elif not keep_empty:
+            copied.remove(text)
+        offset = finish
+    return copied if copied.findall(_WNS + "t") else None
+
+
+def _insertion_run(run: ET._Element, offset: int, replacement: str) -> ET._Element:
+    copied = deepcopy(run)
+    texts = copied.findall(_WNS + "t")
+    position = 0
+    reference = next(text for text in reversed(texts) if text.text)
+    for text in texts:
+        finish = position + len(text.text or "")
+        if position <= offset < finish:
+            reference = text
+            break
+        position = finish
+    inserted = deepcopy(reference)
+    inserted.text = replacement
+    inserted.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    for text in texts:
+        copied.remove(text)
+    copied.append(inserted)
     return copied
 
 
@@ -554,9 +588,16 @@ def _apply_paragraph_edits(para: ET._Element, edits: list[dict], allocator: _Rev
     revisions = []
     children = [deepcopy(ch) for ch in para if ch.tag == _WNS + "pPr"]
 
-    def slices(start: int, end: int) -> list[ET._Element]:
-        return [_run_slice(run, max(start - a, 0), min(end, b) - a)
-                for a, b, run in spans if a < end and b > start]
+    def slices(start: int, end: int, include_end: bool = False) -> list[ET._Element]:
+        result = []
+        for a, b, run in spans:
+            if b < start or a > end:
+                continue
+            sliced = _run_slice(run, max(start - a, 0), min(end, b) - a,
+                                include_end=b < end or include_end)
+            if sliced is not None:
+                result.append(sliced)
+        return result
 
     def revision(kind: str, author: str) -> ET._Element:
         node = ET.Element(_WNS + kind)
@@ -575,18 +616,18 @@ def _apply_paragraph_edits(para: ET._Element, edits: list[dict], allocator: _Rev
         if deleted:
             node = revision("del", edit["author"])
             for run in deleted:
-                run.find(_WNS + "t").tag = _WNS + "delText"
+                for text in run.findall(_WNS + "t"):
+                    text.tag = _WNS + "delText"
                 node.append(run)
             children.append(node)
         if edit["replacement"]:
             node = revision("ins", edit["author"])
-            reference = next((r for a, b, r in spans if a <= start < b), spans[-1][2])
-            inserted = _run_slice(reference, 0, 0)
-            inserted.find(_WNS + "t").text = edit["replacement"]
-            node.append(inserted)
+            a, _, reference = next((span for span in spans if span[0] <= start < span[1]),
+                                   next(span for span in reversed(spans) if span[0] < span[1]))
+            node.append(_insertion_run(reference, start - a, edit["replacement"]))
             children.append(node)
         cursor = end
-    children.extend(slices(cursor, spans[-1][1]))
+    children.extend(slices(cursor, spans[-1][1], include_end=True))
     para[:] = children
     return revisions
 
@@ -660,18 +701,25 @@ def _xml_signature(node: ET._Element) -> tuple:
 def _paragraph_semantics(para: ET._Element) -> tuple:
     styled = []
     for run in para.findall(_WNS + "r"):
-        text = run.find(_WNS + "t")
-        if text is None:
+        if any(child.tag not in (_WNS + "rPr", _WNS + "t") for child in run):
             raise ValueError("Verification: unsupported run in restored paragraph.")
-        style = (tuple(sorted(run.attrib.items())),
-                 tuple(_xml_signature(ch) for ch in run if ch.tag == _WNS + "rPr"),
-                 tuple(sorted((key, value) for key, value in text.attrib.items()
-                              if key != "{http://www.w3.org/XML/1998/namespace}space")))
-        value = text.text or ""
-        if styled and styled[-1][0] == style:
-            styled[-1] = (style, styled[-1][1] + value)
-        else:
-            styled.append((style, value))
+        texts = run.findall(_WNS + "t")
+        if not texts:
+            styled.append(("empty_run", _xml_signature(run)))
+            continue
+        run_style = (tuple(sorted(run.attrib.items())),
+                     tuple(_xml_signature(ch) for ch in run if ch.tag == _WNS + "rPr"))
+        for text in texts:
+            value = text.text or ""
+            if not value:
+                styled.append(("empty_text", run_style, _xml_signature(text)))
+                continue
+            style = (run_style, tuple(sorted((key, value) for key, value in text.attrib.items()
+                                            if key != "{http://www.w3.org/XML/1998/namespace}space")))
+            if styled and styled[-1][0] == "text" and styled[-1][1] == style:
+                styled[-1] = ("text", style, styled[-1][2] + value)
+            else:
+                styled.append(("text", style, value))
     return (tuple(sorted(para.attrib.items())),
             tuple(_xml_signature(ch) for ch in para if ch.tag == _WNS + "pPr"), tuple(styled))
 
