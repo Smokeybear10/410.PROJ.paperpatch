@@ -1995,9 +1995,12 @@ export default function DocumentApp() {
     const form = new FormData();
     form.append("file", file);
     form.append("revision", String(session.revision));
-    await perform("current", () => documentRequest(`/api/documents/${session.id}/current`, { method: "POST", body: form }), () => {
-      setNotice("Latest draft loaded. Review the updated matches and decisions before exporting.");
-      setStage("review");
+    await perform("current", () => documentRequest(`/api/documents/${session.id}/current`, { method: "POST", body: form }), (value) => {
+      const unchanged = value.revision === session.revision && value.currentHash === session.currentHash;
+      setNotice(unchanged
+        ? "This file already matches the latest draft. Your review decisions are unchanged."
+        : "Latest draft loaded. Review the updated matches and decisions before exporting.");
+      if (!unchanged) setStage("review");
     });
   };
   const uploadPhoto = async (file: File) => {
