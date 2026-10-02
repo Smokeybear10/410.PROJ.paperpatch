@@ -1,11 +1,11 @@
 .doc-app {
-  --paper: #fffef9;
-  --ground: #f1f0e9;
-  --ink: #292b25;
-  --muted: #72756b;
-  --line: #d8d9cf;
+  --paper: #ffffff;
+  --ground: #f4f5f6;
+  --ink: #24282d;
+  --muted: #606871;
+  --line: #d9dde1;
   --red: #a13e36;
-  --blue: #35647b;
+  --blue: #285e86;
   color: var(--ink);
   background: var(--ground);
   min-height: 100vh;
@@ -51,7 +51,7 @@
 .doc-app select,
 .doc-app textarea {
   width: 100%;
-  border: 1px solid #c5c8bd;
+  border: 1px solid #bcc3ca;
   border-radius: 2px;
   color: var(--ink);
   background: var(--paper);
@@ -187,7 +187,7 @@
   gap: 9px;
   min-height: 46px;
   padding: 11px 17px;
-  border: 1px solid #babfb0;
+  border: 1px solid #bcc3ca;
   border-radius: 3px;
   background: var(--paper);
   font-size: 13px;
@@ -196,8 +196,8 @@
   text-align: center;
 }
 .doc-app .doc-button:not(:disabled):hover {
-  background: #eaece3;
-  border-color: #929a86;
+  background: #f0f2f4;
+  border-color: #8b959f;
 }
 .doc-app .doc-button.primary {
   background: var(--ink);
@@ -205,8 +205,8 @@
   color: #fffef9;
 }
 .doc-app .doc-button.primary:not(:disabled):hover {
-  background: #444b39;
-  border-color: #444b39;
+  background: #3a424a;
+  border-color: #3a424a;
 }
 .doc-app .doc-button.compact {
   min-height: 39px;
@@ -306,7 +306,9 @@
   margin-bottom: 18px;
 }
 .doc-app .doc-recent-heading h2 {
-  font: 28px/1.2 Georgia, serif;
+  font:
+    28px/1.2 Georgia,
+    serif;
   letter-spacing: -0.7px;
 }
 .doc-app .doc-recent-heading p {
@@ -722,6 +724,12 @@
   justify-content: space-between;
   padding: 29px 0 24px;
   gap: 20px;
+}
+.doc-app .doc-review-heading > div:first-child {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
 .doc-app .doc-review-heading h1 {
   font:
@@ -1172,7 +1180,7 @@
   height: auto;
   max-height: 160px;
   object-fit: contain;
-  background: #f7f6ed;
+  background: #f4f6f8;
   border: 1px solid #e1e4d8;
   margin-top: 8px;
 }
@@ -2460,89 +2468,683 @@
   color: #8c6d3c;
 }
 
-/* Keep source, interpretation and the decision together in the review desk. */
-.doc-app .doc-inspector-top {
+/* The review workspace keeps the document and its decisions in view. */
+.doc-app .doc-header {
+  height: 56px;
+  padding-inline: 22px;
+  gap: 24px;
+}
+.doc-app .doc-brand {
+  font-size: 21px;
+  letter-spacing: -0.6px;
+}
+.doc-app .doc-header-context {
+  font:
+    13px "IBM Plex Sans",
+    sans-serif;
+  letter-spacing: 0;
+}
+.doc-app .doc-header-mode {
+  font-size: 11px;
+}
+.doc-app .doc-legacy-link {
+  font-size: 13px;
+  color: var(--muted);
+}
+.doc-app .doc-workspace {
+  padding-inline: 18px;
+}
+.doc-app .doc-workflow-bar {
+  min-height: 48px;
+}
+.doc-app .doc-workflow-bar nav > button {
+  font-size: 14px;
+  color: var(--muted);
+  min-height: 48px;
+}
+.doc-app .doc-workflow-bar nav > button.active {
+  color: var(--ink);
+}
+.doc-app .doc-workflow-bar nav > button > span,
+.doc-app .doc-workflow-bar nav > button > b {
+  font-size: 11px;
+}
+.doc-app .doc-workflow-bar nav > button > b {
+  background: #e5e8eb;
+  min-width: 20px;
+  height: 20px;
+}
+.doc-app .doc-current-file,
+.doc-app .doc-current-file button {
+  font-size: 12px;
+  color: var(--muted);
+}
+.doc-app .doc-current-file b {
+  color: var(--ink);
+  max-width: 300px;
+}
+.doc-app .doc-current-dot {
+  background: #667c91;
+}
+.doc-app .doc-session-example {
+  padding-block: 8px;
+  gap: 12px;
+  color: var(--muted);
+}
+.doc-app .doc-example-label {
+  font:
+    500 11px "IBM Plex Sans",
+    sans-serif;
+  letter-spacing: 0;
+  color: #46525f;
+  border-color: #cbd1d8;
+  background: #edf0f3;
+}
+.doc-app .doc-session-example p,
+.doc-app .doc-session-example a,
+.doc-app .doc-session-warnings {
+  font-size: 12px;
+}
+.doc-app .doc-session-warnings {
+  padding-block: 7px;
+}
+.doc-app .doc-review-heading {
+  padding: 12px 0;
+  gap: 16px;
+}
+.doc-app .doc-review-heading h1,
+.doc-app .doc-inspector h2,
+.doc-app .doc-prepare-copy h1,
+.doc-app .doc-export-layout h1 {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+.doc-app .doc-review-heading h1 {
+  font-size: 22px;
+  margin: 0;
+}
+.doc-app .doc-review-heading p,
+.doc-app .doc-review-summary {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+.doc-app .doc-review-heading .doc-eyebrow {
+  font-size: 12px;
+  color: var(--muted);
+}
+.doc-app .doc-review-heading-actions input,
+.doc-app .doc-review-heading-actions .doc-button {
+  font-size: 13px;
   min-height: 40px;
 }
+.doc-app .doc-review-layout {
+  grid-template-columns: 200px minmax(280px, 1fr) minmax(390px, 420px);
+}
+.doc-app .doc-change-rail {
+  background: #fafbfc;
+}
+.doc-app .doc-change-rail-top {
+  padding: 14px 12px 10px;
+  font-size: 14px;
+}
+.doc-app .doc-change-rail-top > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.doc-app .doc-rail-filters {
+  margin: 0 9px 10px;
+  background: #e9edf0;
+}
+.doc-app .doc-rail-filters button {
+  font-size: 11px;
+  min-height: 34px;
+  color: #4f5c68;
+}
+.doc-app .doc-rail-filters button.active {
+  color: var(--ink);
+  background: white;
+  box-shadow: none;
+}
+.doc-app .doc-change-item {
+  padding: 12px 10px;
+  gap: 7px;
+  border-color: var(--line);
+  border-left-color: transparent;
+}
+.doc-app .doc-change-item:hover {
+  background: #f0f3f6;
+}
+.doc-app .doc-change-item.selected {
+  background: #e8eff5;
+  border-left-color: var(--blue);
+}
+.doc-app .doc-change-number,
+.doc-app .doc-change-meta,
+.doc-app .doc-change-meta span:first-child {
+  font-size: 12px;
+  color: var(--muted);
+}
+.doc-app .doc-change-item p {
+  font:
+    500 15px/1.4 "IBM Plex Sans",
+    sans-serif;
+  margin: 6px 0;
+}
+.doc-app .doc-edit-status {
+  font-size: 12px;
+  color: #49604f;
+}
+.doc-app .doc-edit-status.conflict {
+  color: #9b4c27;
+}
+.doc-app .doc-rail-export {
+  padding: 14px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  background: white;
+  margin-top: 0;
+}
+.doc-app .doc-proof {
+  background: #e8ebee;
+}
+.doc-app .doc-proof-toolbar {
+  min-height: 48px;
+  padding: 5px 12px;
+  background: #f7f8f9;
+}
+.doc-app .doc-source-select select {
+  font-size: 13px;
+  color: var(--ink);
+  min-height: 36px;
+}
+.doc-app .doc-zoom button {
+  width: 32px;
+  height: 36px;
+  color: var(--muted);
+}
+.doc-app .doc-zoom output {
+  font-size: 11px;
+  color: var(--muted);
+}
+.doc-app .doc-example-strip {
+  font-size: 11px;
+  color: #59636d;
+  background: #f0f2f4;
+  border-color: var(--line);
+}
+.doc-app .doc-proof-scroll {
+  padding: 20px;
+  scrollbar-color: #bbc2c9 #e8ebee;
+}
+.doc-app .doc-proof-paper {
+  box-shadow: 0 2px 8px #25313f18;
+}
+.doc-app .doc-proof-footer {
+  padding: 10px 12px;
+  background: #f7f8f9;
+}
+.doc-app .doc-proof-footer b,
+.doc-app .doc-proof-footer p,
+.doc-app .doc-proof-footer .doc-button,
+.doc-app .doc-scan-details,
+.doc-app .doc-scan-details p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.doc-app .doc-correction-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.doc-app .doc-correction-heading .doc-avatar {
+  display: none;
+}
+.doc-app .doc-correction-heading .doc-source-badge {
+  margin-left: 8px;
+}
+.doc-app .doc-comparison .doc-replacement-label > .doc-eyebrow {
+  flex-wrap: wrap;
+  gap: 2px;
+  min-height: 16px;
+}
+.doc-app .doc-result-preview del + ins {
+  margin-left: 4px;
+}
+.doc-app .doc-inspector {
+  padding: 0 18px;
+  background: white;
+}
+.doc-app .doc-inspector-top {
+  min-height: 44px;
+  border-color: var(--line);
+}
+.doc-app .doc-inspector-top .doc-eyebrow,
+.doc-app .doc-inspector .doc-eyebrow {
+  font:
+    500 11px/1.4 "IBM Plex Sans",
+    sans-serif;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+}
+.doc-app .doc-inspector-top button {
+  width: 34px;
+  height: 36px;
+  color: var(--muted);
+}
 .doc-app .doc-inspector h2 {
-  margin-top: 12px;
-  font-size: 23px;
+  margin: 0;
+  font-size: 18px;
 }
 .doc-app .doc-edit-author {
-  margin: 8px 0 12px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.doc-app .doc-avatar {
+  background: #eff2f5;
+  color: #526374;
+  border-color: #d7dfe6;
+}
+.doc-app .doc-source-badge {
+  font-size: 11px;
+  color: var(--muted);
 }
 .doc-app .doc-state-note {
-  margin: 10px 0 12px;
-  padding: 9px 10px;
+  margin: 8px 0;
+  padding: 8px;
+  background: #f1f4f7;
+  color: #4f5c68;
+}
+.doc-app .doc-state-note.conflict {
+  background: #fff3e7;
+  color: #8e4722;
+}
+.doc-app .doc-state-note summary {
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
 }
 .doc-app .doc-state-note p {
   margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .doc-app .doc-crop {
-  margin: 12px 0;
-}
-.doc-app .doc-crop img {
-  max-height: 110px;
-  margin-top: 6px;
+  margin: 8px 0;
 }
 .doc-app .doc-comparison {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  margin-top: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
 }
 .doc-app .doc-comparison > div {
-  padding: 10px 0;
+  padding: 8px 0;
 }
 .doc-app .doc-comparison > .changed {
   margin: 0;
-  padding: 10px 8px;
+  padding: 8px;
+  background: #eef4f8;
+  border-left-color: #8ca9bf;
 }
 .doc-app .doc-comparison .doc-eyebrow {
   flex-wrap: wrap;
   gap: 3px;
 }
 .doc-app .doc-comparison p {
+  font:
+    500 18px/1.45 "IBM Plex Sans",
+    sans-serif;
   margin-top: 5px;
 }
 .doc-app .doc-replacement-label {
-  margin-top: 13px;
+  margin-top: 0;
+  padding-top: 8px;
 }
 .doc-app .doc-replacement-label textarea {
-  min-height: 70px;
-  padding: 8px 10px;
+  min-height: 48px;
+  height: 48px;
+  padding: 6px;
+  font:
+    16px/1.5 "IBM Plex Sans",
+    sans-serif;
+  border-color: #a5b6c4;
+  color: var(--ink);
+}
+.doc-app .doc-result-preview {
+  margin-top: 10px;
+  padding-block: 10px;
+  border-block: 1px solid var(--line);
+}
+.doc-app .doc-result-preview > span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.doc-app .doc-result-preview p {
+  font-size: 15px;
+  line-height: 1.65;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.doc-app .doc-result-preview del {
+  color: #8b4641;
+  background: #f9e8e6;
+  text-decoration-thickness: 1px;
+}
+.doc-app .doc-result-preview ins {
+  color: #235c3d;
+  background: #e7f2e9;
+  text-underline-offset: 3px;
+}
+.doc-app .doc-comparison .doc-eyebrow > span,
+.doc-app .doc-replacement-label .doc-eyebrow > span {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.doc-app .doc-replacement-label textarea {
+  background: white;
+}
+.doc-app .doc-inspector .doc-fine-print,
+.doc-app .doc-inspector .doc-delete-note {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.doc-app .doc-inspector-body {
+  padding-bottom: 16px;
+}
+.doc-app .doc-decision-footer {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  background: white;
 }
 .doc-app .doc-confirm {
-  margin-top: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
 }
 .doc-app .doc-decision-actions {
-  margin-top: 14px;
-  padding-top: 13px;
-  gap: 7px;
+  margin: 0;
+  padding: 0;
+  gap: 8px;
+  border: 0;
 }
 .doc-app .doc-decision-actions .doc-button {
-  min-height: 38px;
+  min-height: 42px;
+  font-size: 14px;
 }
 .doc-app .doc-decision-saved {
-  margin-top: 14px;
-  padding: 13px 0;
+  margin: 0;
+  padding: 4px 0;
+  font-size: 13px;
+  border: 0;
+}
+.doc-app .doc-decision-saved b,
+.doc-app .doc-decision-saved p {
+  font-size: 13px;
 }
 .doc-app .doc-context {
   margin-top: 15px;
   padding-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.doc-app .doc-prepare-copy h1,
+.doc-app .doc-export-layout h1 {
+  font-size: 34px;
+  line-height: 1.2;
+}
+.doc-app .doc-workspace-footer {
+  padding: 10px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (min-width: 1101px) {
+  .doc-app.doc-stage-review {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .doc-stage-review .doc-header {
+    flex-shrink: 0;
+  }
+  .doc-stage-review .doc-workspace {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .doc-stage-review .doc-workspace > :not(.doc-review-layout) {
+    flex-shrink: 0;
+  }
+  .doc-stage-review .doc-review-layout {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    align-items: stretch;
+  }
+  .doc-stage-review .doc-change-rail,
+  .doc-stage-review .doc-inspector,
+  .doc-stage-review .doc-proof {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .doc-stage-review .doc-inspector {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .doc-stage-review .doc-inspector-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin-inline: -18px;
+    padding-inline: 18px;
+    overscroll-behavior-y: contain;
+  }
+  .doc-stage-review .doc-inspector-top,
+  .doc-stage-review .doc-decision-footer {
+    flex-shrink: 0;
+  }
+  .doc-stage-review .doc-change-items {
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .doc-stage-review .doc-rail-export,
+  .doc-stage-review .doc-rail-filters,
+  .doc-stage-review .doc-change-rail-top {
+    flex-shrink: 0;
+  }
+  .doc-stage-review .doc-proof {
+    display: flex;
+    flex-direction: column;
+  }
+  .doc-stage-review .doc-proof > :not(.doc-proof-scroll) {
+    flex-shrink: 0;
+  }
+  .doc-stage-review .doc-proof-scroll {
+    flex: 1 0 180px;
+    height: auto;
+    min-height: 180px;
+    max-height: none;
+  }
+}
+@media (min-width: 701px) and (max-width: 1100px) {
+  .doc-app .doc-review-layout {
+    grid-template-columns: minmax(280px, 1fr) minmax(350px, 0.85fr);
+  }
+  .doc-app .doc-change-rail {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .doc-app .doc-change-rail-top {
+    flex-direction: row;
+    gap: 10px;
+    align-items: baseline;
+  }
+  .doc-app .doc-rail-filters {
+    margin: 8px 12px 8px auto;
+    min-width: 210px;
+  }
+  .doc-app .doc-change-items {
+    display: flex;
+    flex-basis: 100%;
+    overflow-x: auto;
+  }
+  .doc-app .doc-change-item {
+    flex: 0 0 200px;
+    border-right: 1px solid var(--line);
+    border-bottom: 2px solid transparent;
+    border-left: 0;
+  }
+  .doc-app .doc-change-item.selected {
+    border-bottom-color: var(--blue);
+  }
+  .doc-app .doc-rail-export {
+    display: none;
+  }
+  .doc-app .doc-inspector {
+    max-height: 760px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .doc-app .doc-inspector-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin-inline: -18px;
+    padding-inline: 18px;
+  }
+  .doc-app .doc-inspector-top,
+  .doc-app .doc-decision-footer {
+    flex-shrink: 0;
+  }
+  .doc-app .doc-review-heading {
+    flex-direction: row;
+    align-items: center;
+  }
 }
 @media (max-width: 700px) {
+  .doc-app .doc-header {
+    padding-inline: 16px;
+  }
+  .doc-app .doc-brand {
+    font-size: 20px;
+  }
+  .doc-app .doc-legacy-link {
+    font-size: 12px;
+  }
+  .doc-app .doc-workspace {
+    padding-inline: 12px;
+  }
+  .doc-app .doc-workflow-bar nav {
+    min-height: 48px;
+    gap: 18px;
+  }
+  .doc-app .doc-workflow-bar nav > button {
+    font-size: 13px;
+  }
+  .doc-app .doc-current-file {
+    font-size: 12px;
+    min-height: 40px;
+  }
+  .doc-app .doc-current-file b {
+    max-width: 210px;
+  }
+  .doc-app .doc-session-example p {
+    font-size: 12px;
+  }
+  .doc-app .doc-review-heading {
+    gap: 12px;
+  }
+  .doc-app .doc-review-heading-actions {
+    flex-wrap: wrap;
+  }
+  .doc-app .doc-review-heading-actions label {
+    min-width: 100px;
+  }
+  .doc-app .doc-review-heading-actions .doc-button {
+    padding-inline: 10px;
+    min-height: 44px;
+  }
+  .doc-app .doc-review-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .doc-app .doc-change-rail {
+    order: 0;
+  }
+  .doc-app .doc-change-rail-top {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+  .doc-app .doc-rail-filters {
+    float: none;
+    margin: 0 10px 10px;
+  }
+  .doc-app .doc-rail-filters button {
+    min-height: 40px;
+    font-size: 12px;
+  }
+  .doc-app .doc-change-item {
+    width: 195px;
+    min-height: 114px;
+  }
+  .doc-app .doc-change-item.selected {
+    border-bottom-color: var(--blue);
+  }
+  .doc-app .doc-inspector {
+    order: 1;
+    padding-inline: 16px;
+    max-height: none;
+    overflow: visible;
+  }
   .doc-app .doc-inspector h2 {
-    font-size: 27px;
+    font-size: 21px;
+  }
+  .doc-app .doc-inspector-top button {
+    width: 44px;
+    height: 44px;
+  }
+  .doc-app .doc-state-note p,
+  .doc-app .doc-edit-author,
+  .doc-app .doc-confirm {
+    font-size: 13px;
   }
   .doc-app .doc-decision-actions .doc-button {
-    min-height: 45px;
+    min-height: 46px;
   }
-  .doc-app .doc-confirm {
-    min-height: 42px;
+  .doc-app .doc-proof {
+    order: 2;
+    border-top: 1px solid var(--line);
   }
   .doc-app .doc-proof-scroll {
-    height: 54vh;
+    height: 60vh;
+    min-height: 350px;
+    padding: 16px;
+  }
+  .doc-app .doc-proof-footer .doc-button {
+    min-height: 44px;
+  }
+  .doc-app .doc-prepare-copy h1,
+  .doc-app .doc-export-layout h1 {
+    font-size: 30px;
   }
 }
 .doc-app .doc-trial-start {
@@ -2850,31 +3452,31 @@
   min-width: 35px;
   min-height: 32px;
   padding: 4px 7px;
-  border: 1px solid #d9dfcf;
+  border: 1px solid #ccd3da;
   border-radius: 2px;
-  color: #5c7050;
-  background: #fafbf5;
-  font-size: 11px;
+  color: #516271;
+  background: #f6f8fa;
+  font-size: 12px;
 }
 .doc-app .doc-crop-controls button[aria-pressed="true"] {
-  background: #e3ead7;
-  border-color: #8b9c76;
-  color: #3a512e;
+  background: #e5edf4;
+  border-color: #8da6bb;
+  color: #2c526e;
 }
 .doc-app .doc-crop-controls a {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
-  color: #5c7050;
+  font-size: 12px;
+  color: #516271;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .doc-app .doc-crop-window {
   width: 100%;
   overflow: auto;
-  background: #f7f6ed;
-  border: 1px solid #dfe3d5;
+  background: #f4f6f8;
+  border: 1px solid #d8dfe5;
   touch-action: pan-y;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -2942,7 +3544,7 @@
 .doc-app .doc-reading-alternatives button {
   min-height: 34px;
   padding: 7px 10px;
-  border: 1px solid #d9dfcf;
+  border: 1px solid #ccd3da;
   border-radius: 2px;
   color: #536a43;
   font-size: 12px;
@@ -2951,7 +3553,7 @@
   max-width: 100%;
 }
 .doc-app .doc-reading-alternatives button[aria-pressed="true"] {
-  border-color: #8b9c76;
+  border-color: #8da6bb;
   background: #eef3e5;
 }
 .doc-app .doc-manual-dialog .doc-selection-label {
@@ -2968,7 +3570,10 @@
   min-height: 110px;
   max-height: 230px;
   resize: vertical;
-  font: 16px/1.65 Georgia, "Times New Roman", serif;
+  font:
+    16px/1.65 Georgia,
+    "Times New Roman",
+    serif;
   cursor: text;
 }
 .doc-app .doc-target-preview {
@@ -2985,7 +3590,10 @@
   margin-top: 6px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 16px/1.6 Georgia, "Times New Roman", serif;
+  font:
+    16px/1.6 Georgia,
+    "Times New Roman",
+    serif;
 }
 .doc-app .doc-target-preview mark {
   background: #f0dfbd;
@@ -2999,7 +3607,9 @@
 }
 .doc-app .doc-target-preview .doc-preview-prompt {
   color: #748168;
-  font: 12px/1.5 "IBM Plex Sans", sans-serif;
+  font:
+    12px/1.5 "IBM Plex Sans",
+    sans-serif;
 }
 @media (max-width: 700px) {
   .doc-app .doc-crop-controls button,

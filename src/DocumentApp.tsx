@@ -155,13 +155,13 @@ function Landing({
       <div className="doc-introduction">
         <span className="doc-eyebrow">PAPER → REVIEW → WORD</span>
         <h1>
-          Your pen.
+          Paper edits,
           <br />
-          <em>Word’s</em> Track Changes.
+          back in Word.
         </h1>
         <p className="doc-lead">
-          Make your edits on paper. Bring them back into the latest draft,
-          without losing what changed while you were away.
+          Compare handwritten corrections with your latest Word draft. Choose
+          each change, then export an editable document with tracked changes.
         </p>
         <div className="doc-landing-actions">
           <button
@@ -226,48 +226,40 @@ function Landing({
       </div>
       <div
         className="doc-cover-example"
-        aria-label="Illustration of handwritten corrections becoming tracked changes"
+        aria-label="Illustration of a paper correction merged into a newer Word draft"
       >
         <div className="doc-cover-index">
           <span>01 / ON PAPER</span>
           <span>ILLUSTRATION</span>
         </div>
         <div className="doc-cover-sheet">
-          <span className="doc-sheet-kicker">COMMUNITY OPEN HOUSE</span>
-          <h2>
-            A space to make
-            <br />
-            something together.
-          </h2>
+          <span className="doc-sheet-kicker">
+            NORTHLIGHT / COMMUNITY OPEN NIGHT
+          </span>
+          <h2>A night at the observatory</h2>
           <p>
-            The workshop will welcome{" "}
+            Each session is limited to{" "}
             <span className="doc-pen-correction">
-              <del>forty</del>
-              <ins>sixty</ins>
+              <del>24</del>
+              <ins>18</ins>
             </span>{" "}
-            guests. We’ll open the doors at 10 a.m. and finish with a shared
-            lunch.
+            guests and lasts 45 minutes.
           </p>
-          <p>
-            <span className="doc-pen-strike">
-              Registration closes on Friday.
-            </span>{" "}
-            There is no experience required. Bring an idea and a little
-            curiosity.
-          </p>
-          <div className="doc-cover-margin">keep this open!</div>
+          <p>Doors open at 6:00 pm. The last entry is at 9:00 pm.</p>
+          <div className="doc-cover-margin">Alex’s paper copy</div>
           <div className="doc-cover-rule" />
           <span className="doc-sheet-footer">REVIEW COPY · 1 / 1</span>
         </div>
         <div className="doc-cover-result">
           <span className="doc-eyebrow">
-            <Check size={14} /> BACK IN WORD
+            <Check size={14} /> MERGED INTO THE LATEST WORD DRAFT
           </span>
           <p>
-            The workshop will welcome <del>forty</del> <ins>sixty</ins> guests.
+            Each session is limited to <del>30</del> <ins>18</ins> guests.
           </p>
           <span className="doc-cover-result-note">
-            An editable revision. Yours to accept or reject.
+            Word had changed to 30. Choose 18 from paper and keep the newer 9:30
+            last entry.
           </span>
         </div>
       </div>
@@ -841,22 +833,51 @@ function EditInspector({
   const draftKey = `paperpatch-word-draft:${session.id}:${edit.id}`;
   const legacyDraftKey = `${draftKey}:${JSON.stringify([edit.baseText, edit.currentText, edit.replacement])}`;
   const initialLegacyKey = useRef(legacyDraftKey);
-  const sourceIdentity = JSON.stringify([edit.paragraphId, edit.start, edit.end, edit.baseText, edit.scanId, edit.sourceMarkId ?? null]);
-  const [draft, setDraft] = useState<z.infer<typeof readingDraftSchema> | null>(() => {
-    try {
-      const parsed = readingDraftSchema.safeParse(JSON.parse(readDraft(draftKey, "null")));
-      if (parsed.success && parsed.data.sessionId === session.id && parsed.data.editId === edit.id && parsed.data.sourceIdentity === sourceIdentity) return parsed.data;
-    } catch { /* Older drafts were stored as plain text. */ }
-    const legacy = readDraft(legacyDraftKey, "\u0000");
-    return legacy === "\u0000" ? null : {
-      version: 2, sessionId: session.id, editId: edit.id, sourceIdentity,
-      currentText: edit.currentText, serverReplacement: edit.replacement, text: legacy,
-    };
-  });
+  const sourceIdentity = JSON.stringify([
+    edit.paragraphId,
+    edit.start,
+    edit.end,
+    edit.baseText,
+    edit.scanId,
+    edit.sourceMarkId ?? null,
+  ]);
+  const [draft, setDraft] = useState<z.infer<typeof readingDraftSchema> | null>(
+    () => {
+      try {
+        const parsed = readingDraftSchema.safeParse(
+          JSON.parse(readDraft(draftKey, "null")),
+        );
+        if (
+          parsed.success &&
+          parsed.data.sessionId === session.id &&
+          parsed.data.editId === edit.id &&
+          parsed.data.sourceIdentity === sourceIdentity
+        )
+          return parsed.data;
+      } catch {
+        /* Older drafts were stored as plain text. */
+      }
+      const legacy = readDraft(legacyDraftKey, "\u0000");
+      return legacy === "\u0000"
+        ? null
+        : {
+            version: 2,
+            sessionId: session.id,
+            editId: edit.id,
+            sourceIdentity,
+            currentText: edit.currentText,
+            serverReplacement: edit.replacement,
+            text: legacy,
+          };
+    },
+  );
   const replacement = draft?.text ?? edit.replacement;
   const [draftSaved, setDraftSaved] = useState(Boolean(draft));
   const changed = replacement !== edit.replacement;
-  const contextChanged = !!draft && (draft.currentText !== edit.currentText || draft.serverReplacement !== edit.replacement);
+  const contextChanged =
+    !!draft &&
+    (draft.currentText !== edit.currentText ||
+      draft.serverReplacement !== edit.replacement);
   const clearDraft = () => {
     writeDraft(draftKey, null);
     writeDraft(initialLegacyKey.current, null);
@@ -866,8 +887,14 @@ function EditInspector({
   };
   const updateReplacement = (value: string) => {
     const next = {
-      ...(draft ?? { version: 2 as const, sessionId: session.id, editId: edit.id, sourceIdentity,
-        currentText: edit.currentText, serverReplacement: edit.replacement }),
+      ...(draft ?? {
+        version: 2 as const,
+        sessionId: session.id,
+        editId: edit.id,
+        sourceIdentity,
+        currentText: edit.currentText,
+        serverReplacement: edit.replacement,
+      }),
       text: value,
     };
     setDraft(next);
@@ -875,7 +902,9 @@ function EditInspector({
     writeDraft(draftKey, serialized);
     const saved = readDraft(draftKey, "") === serialized;
     setDraftSaved(saved);
-    onDraftProtectionChange((value !== edit.replacement || contextChanged) && !saved);
+    onDraftProtectionChange(
+      (value !== edit.replacement || contextChanged) && !saved,
+    );
   };
   useEffect(() => {
     if (!draft) return;
@@ -898,19 +927,44 @@ function EditInspector({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [changed, contextChanged, draftSaved]);
-  const missingReading = edit.kind === "replace" && !replacement.trim();
+  const requiresReading =
+    edit.kind === "replace" ||
+    edit.kind === "insert" ||
+    edit.start === edit.end;
+  const missingReading = requiresReading && !replacement.trim();
   const canApply =
     ["ready", "conflict"].includes(edit.status) &&
     edit.currentParagraphId !== null &&
     edit.currentStart !== null &&
     edit.currentEnd !== null;
   const confirmed = edit.confirmed && !changed && !contextChanged;
+  const currentParagraph = session.currentParagraphs.find(
+    (paragraph) => paragraph.id === edit.currentParagraphId,
+  );
+  const currentCharacters = Array.from(currentParagraph?.text ?? "");
+  const previewStart = edit.currentStart;
+  const previewEnd = edit.currentEnd;
+  const canPreview =
+    currentParagraph &&
+    previewStart !== null &&
+    previewEnd !== null &&
+    previewStart >= 0 &&
+    previewEnd >= previewStart &&
+    previewEnd <= currentCharacters.length &&
+    currentCharacters.slice(previewStart, previewEnd).join("") ===
+      edit.currentText &&
+    (canApply || edit.status === "already_applied");
+  const previewReplacement = edit.decision ? edit.replacement : replacement;
+  const previewMissingReading = requiresReading && !previewReplacement.trim();
+  const previewChanges =
+    edit.decision !== "current" &&
+    edit.status !== "already_applied" &&
+    previewReplacement !== edit.currentText;
   const index = session.edits.findIndex((item) => item.id === edit.id);
   const patch = async (body: object) =>
     mutate(`/edits/${edit.id}`, body, "PATCH");
   const confirm = async () => {
-    if (await patch({ replacement, confirmed: true }))
-      clearDraft();
+    if (await patch({ replacement, confirmed: true })) clearDraft();
   };
   const confirmAndApply = async () => {
     if (await patch({ replacement, confirmed: true, decision: "paper" }))
@@ -947,209 +1001,275 @@ function EditInspector({
           </button>
         </div>
       </div>
-      <h2>
-        {editAction(edit)}{" "}
-        {edit.start === edit.end ? "at this passage" : "this passage"}
-      </h2>
-      <div className="doc-edit-author">
-        <span className="doc-avatar">
-          {edit.reviewer.slice(0, 1).toUpperCase()}
-        </span>
-        <b>{edit.reviewer}</b>
-        <SourceBadge edit={edit} />
-      </div>
-      <div
-        className={`doc-state-note ${edit.status === "conflict" || edit.status === "overlap" ? "conflict" : ""}`}
-      >
-        <CircleAlert size={16} />
-        <div>
-          <b>{statusNames[edit.status]}</b>
-          <p>
-            {edit.reason ||
-              "Check the reading against the source, then choose what belongs in the draft."}
-          </p>
+      <div className="doc-inspector-body">
+        <div className="doc-correction-heading">
+          <h2>{editAction(edit)} text</h2>
+          <div className="doc-edit-author">
+            <span className="doc-avatar">
+              {edit.reviewer.slice(0, 1).toUpperCase()}
+            </span>
+            <b>{edit.reviewer}</b>
+            <SourceBadge edit={edit} />
+          </div>
         </div>
-      </div>
-      {edit.cropUrl && (
-        <div className="doc-crop">
-          <span className="doc-eyebrow">SOURCE MARK</span>
-          <DocumentCropViewer
-            src={edit.cropUrl}
-            alt={`Source handwriting for ${edit.reviewer}’s correction`}
-          />
-        </div>
-      )}
-      <div className="doc-comparison">
-        <div>
-          <span className="doc-eyebrow">PRINTED</span>
-          <p className="doc-original-text">
-            {edit.baseText || <em>Insertion point</em>}
-          </p>
-        </div>
-        <div className={edit.currentText !== edit.baseText ? "changed" : ""}>
-          <span className="doc-eyebrow">
-            LATEST DRAFT{" "}
-            {edit.currentText !== edit.baseText && <span>CHANGED</span>}
-          </span>
-          <p>
-            {edit.currentText || (
-              <em>
-                {edit.start === edit.end ? "Insertion point" : "Passage absent"}
-              </em>
-            )}
-          </p>
-        </div>
-      </div>
-      <label className="doc-replacement-label">
-        <span className="doc-eyebrow">
-          {edit.confirmed ? "REVIEWED TEXT" : "ON PAPER"}{" "}
-          <span>{confirmed ? "READING CONFIRMED" : "CHECK THE READING"}</span>
-        </span>
-        <textarea
-          value={replacement}
-          maxLength={2000}
-          rows={2}
-          disabled={busy || edit.decision !== null}
-          placeholder={
-            edit.kind === "replace"
-              ? "Type the replacement written above the crossed-out words"
-              : edit.kind === "insert" || edit.start === edit.end
-                ? "Type the words to insert"
-                : "Leave empty for a deletion"
-          }
-          onChange={(event) => updateReplacement(event.target.value)}
-        />
-      </label>
-      {edit.source === "ocr" && (
-        <div className="doc-initial-reading">
-          <span className="doc-eyebrow">INITIAL MACHINE RESULT</span>
-          <p>
-            {edit.ocrText === undefined
-              ? "Original reading was not recorded for this older capture."
-              : edit.kind === "delete" && edit.ocrText === ""
-                ? "Strike-through detected; no replacement reading."
-                : edit.ocrText ||
-                  "Replacement ink detected, but no readable text."}
-          </p>
-          {edit.ocrText !== undefined && replacement !== edit.ocrText && (
-            <small>
-              You changed the reading. The initial result remains in the record.
-            </small>
-          )}
-        </div>
-      )}
-      {!replacement && (
-        <p className="doc-delete-note">
-          <Minus size={14} />
-          {missingReading
-            ? "Replacement ink was found, but the reading is empty. Enter the words you see, or keep the latest draft. For a deletion, add a manual correction."
-            : "This correction removes the selected text."}
-        </p>
-      )}
-      {alternatives.length > 0 && !edit.decision && (
-        <div className="doc-reading-alternatives">
-          <span className="doc-eyebrow">OTHER MACHINE READINGS</span>
-          <p>Compare these with the image. Choosing one only fills the reading; it does not approve it.</p>
-          <div>{alternatives.map((value) => (
-            <button key={value} type="button" disabled={busy} aria-pressed={replacement === value} onClick={() => updateReplacement(value)}>{value}</button>
-          ))}</div>
-        </div>
-      )}
-      {(changed || contextChanged) && (
-        <div className="doc-reading-draft" role="status">
-          {contextChanged && <p>The latest passage or saved reading changed. Your draft is retained below; compare it with the latest text before confirming.</p>}
-          <p>{draftSaved
-            ? "Reading saved in this browser. Confirm it to add it to the review."
-            : "This browser could not save your draft. Confirm the reading before leaving this correction."}</p>
-          <button type="button" className="doc-text-link" disabled={busy} onClick={clearDraft}>Discard reading edit</button>
-        </div>
-      )}
-      {!edit.decision && (
-        <button
-          className="doc-button doc-confirm"
-          disabled={busy || confirmed || missingReading}
-          onClick={confirm}
+        <div
+          className={`doc-state-note ${edit.status === "conflict" || edit.status === "overlap" ? "conflict" : ""}`}
         >
-          {confirmed ? <CheckCheck size={16} /> : <Check size={16} />}
-          {confirmed
-            ? "Reading confirmed"
-            : changed
-              ? "Save & confirm reading"
-              : "This reading is correct"}
-        </button>
-      )}
-      {edit.decision ? (
-        <div className="doc-decision-saved">
-          {edit.decision === "paper" && edit.status !== "already_applied" && !isExportableEdit(edit)
-            ? <CircleAlert size={20} /> : <CheckCheck size={20} />}
-          <div>
-            <b>
-              {edit.decision === "paper"
-                ? edit.status === "already_applied"
-                  ? "Already in the latest draft"
-                  : isExportableEdit(edit)
-                    ? "Paper correction selected"
-                    : "Selected correction needs attention"
-                : "Latest draft kept"}
-            </b>
+          <CircleAlert size={16} />
+          <details>
+            <summary>{statusNames[edit.status]}</summary>
             <p>
-              {edit.decision === "paper"
-                ? edit.status === "already_applied"
-                  ? "This reading is already present. It will not create a tracked change."
-                  : isExportableEdit(edit)
-                    ? "It will be included as a tracked change."
-                    : "Resolve its reading or target before exporting."
-                : "This paper suggestion will not change the draft."}
+              {edit.reason ||
+                "Check the reading against the source, then choose what belongs in the draft."}
+            </p>
+          </details>
+        </div>
+        {edit.cropUrl && (
+          <div className="doc-crop">
+            <span className="doc-eyebrow">SOURCE MARK</span>
+            <DocumentCropViewer
+              src={edit.cropUrl}
+              alt={`Source handwriting for ${edit.reviewer}’s correction`}
+            />
+          </div>
+        )}
+        <div className="doc-comparison">
+          <div>
+            <span className="doc-eyebrow">Printed</span>
+            <p className="doc-original-text">
+              {edit.baseText || <em>Insertion point</em>}
             </p>
           </div>
-          <button
-            aria-label="Change this decision"
-            disabled={busy}
-            onClick={() => patch({ decision: null })}
-          >
-            <RotateCcw size={16} />
-          </button>
+          <div className={edit.currentText !== edit.baseText ? "changed" : ""}>
+            <span className="doc-eyebrow">
+              Latest Word{" "}
+              {edit.currentText !== edit.baseText && <span>changed</span>}
+            </span>
+            <p>
+              {edit.currentText || (
+                <em>
+                  {edit.start === edit.end
+                    ? "Insertion point"
+                    : "Passage absent"}
+                </em>
+              )}
+            </p>
+          </div>
+          <label className="doc-replacement-label">
+            <span className="doc-eyebrow">
+              On paper <span>{confirmed ? "confirmed" : "check reading"}</span>
+            </span>
+            <textarea
+              value={replacement}
+              maxLength={2000}
+              rows={2}
+              disabled={busy || edit.decision !== null}
+              placeholder={
+                edit.kind === "replace"
+                  ? "Type the replacement written above the crossed-out words"
+                  : edit.kind === "insert" || edit.start === edit.end
+                    ? "Type the words to insert"
+                    : "Leave empty for a deletion"
+              }
+              onChange={(event) => updateReplacement(event.target.value)}
+            />
+          </label>
         </div>
-      ) : (
-        <div className="doc-decision-actions">
+        {canPreview &&
+          !previewMissingReading &&
+          previewStart !== null &&
+          previewEnd !== null && (
+            <section className="doc-result-preview" aria-label="Change preview">
+              <span className="doc-eyebrow">
+                {edit.decision === "current"
+                  ? "Keeping the latest draft"
+                  : edit.status === "already_applied"
+                    ? "Already in the latest draft"
+                    : edit.decision === "paper"
+                      ? "Selected Word change"
+                      : "If you use this correction"}
+              </span>
+              <p>
+                {currentCharacters.slice(0, previewStart).join("")}
+                {previewChanges ? (
+                  <>
+                    {edit.currentText && <del>{edit.currentText}</del>}
+                    {previewReplacement && <ins>{previewReplacement}</ins>}
+                  </>
+                ) : (
+                  edit.currentText
+                )}
+                {currentCharacters.slice(previewEnd).join("")}
+              </p>
+            </section>
+          )}
+        {edit.source === "ocr" && (
+          <details className="doc-initial-reading">
+            <summary>Original machine reading</summary>
+            <p>
+              {edit.ocrText === undefined
+                ? "Original reading was not recorded for this older capture."
+                : edit.kind === "delete" && edit.ocrText === ""
+                  ? "Strike-through detected; no replacement reading."
+                  : edit.ocrText ||
+                    "Replacement ink detected, but no readable text."}
+            </p>
+            {edit.ocrText !== undefined && replacement !== edit.ocrText && (
+              <small>
+                You changed the reading. The initial result remains in the
+                record.
+              </small>
+            )}
+          </details>
+        )}
+        {!replacement.trim() && (
+          <p className="doc-delete-note">
+            <Minus size={14} />
+            {missingReading
+              ? "Enter the words to add or replace. To dismiss this suggestion, discard the reading edit and keep the latest draft."
+              : "This correction removes the selected text."}
+          </p>
+        )}
+        {alternatives.length > 0 && !edit.decision && (
+          <div className="doc-reading-alternatives">
+            <span className="doc-eyebrow">OTHER MACHINE READINGS</span>
+            <p>
+              Compare these with the image. Choosing one only fills the reading;
+              it does not approve it.
+            </p>
+            <div>
+              {alternatives.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={replacement === value}
+                  onClick={() => updateReplacement(value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {(changed || contextChanged) && (
+          <div className="doc-reading-draft" role="status">
+            {contextChanged && (
+              <p>
+                The latest passage or saved reading changed. Your draft is
+                retained below; compare it with the latest text before
+                confirming.
+              </p>
+            )}
+            <p>
+              {draftSaved
+                ? "Reading saved in this browser. Confirm it to add it to the review."
+                : "This browser could not save your draft. Confirm the reading before leaving this correction."}
+            </p>
+            <button
+              type="button"
+              className="doc-text-link"
+              disabled={busy}
+              onClick={clearDraft}
+            >
+              Discard reading edit
+            </button>
+          </div>
+        )}
+        {!edit.decision && edit.status === "overlap" && (
+          <p className="doc-fine-print">
+            To use this version, select the other correction for this passage
+            and choose “Keep latest draft” to dismiss it. Then return here.
+          </p>
+        )}
+        {!canApply && !["already_applied", "overlap"].includes(edit.status) && (
+          <p className="doc-fine-print">
+            This target needs attention. Keep the latest draft, then{" "}
+            <button className="doc-inline-link" onClick={onManual}>
+              enter a correction at the right passage
+            </button>
+            .
+          </p>
+        )}
+        <details className="doc-context">
+          <summary>Read the passage in context</summary>
+          <p>{edit.paragraphText}</p>
+        </details>
+      </div>
+      <div className="doc-decision-footer">
+        {!edit.decision && !confirmed && (
           <button
-            className="doc-button primary"
-            disabled={busy || missingReading || !canApply}
-            onClick={() => confirmed ? patch({ decision: "paper" }) : confirmAndApply()}
+            className="doc-button doc-confirm"
+            disabled={busy || missingReading}
+            onClick={confirm}
           >
-            <PenLine size={16} />
-            {!confirmed ? "Confirm & use paper" : edit.status === "conflict"
-              ? "Replace latest with paper"
-              : "Use paper correction"}
+            <Check size={16} />
+            {changed ? "Save & confirm reading" : "This reading is correct"}
           </button>
-          <button
-            className="doc-button"
-            disabled={busy || changed}
-            onClick={() => patch({ decision: "current" })}
-          >
-            Keep latest draft
-          </button>
-        </div>
-      )}
-      {!edit.decision && edit.status === "overlap" && (
-        <p className="doc-fine-print">
-          To use this version, select the other correction for this passage and
-          choose “Keep latest draft” to dismiss it. Then return here.
-        </p>
-      )}
-      {!canApply && !["already_applied", "overlap"].includes(edit.status) && (
-        <p className="doc-fine-print">
-          This target needs attention. Keep the latest draft, then{" "}
-          <button className="doc-inline-link" onClick={onManual}>
-            enter a correction at the right passage
-          </button>
-          .
-        </p>
-      )}
-      <details className="doc-context">
-        <summary>Read the passage in context</summary>
-        <p>{edit.paragraphText}</p>
-      </details>
+        )}
+        {edit.decision ? (
+          <div className="doc-decision-saved">
+            {edit.decision === "paper" &&
+            edit.status !== "already_applied" &&
+            !isExportableEdit(edit) ? (
+              <CircleAlert size={20} />
+            ) : (
+              <CheckCheck size={20} />
+            )}
+            <div>
+              <b>
+                {edit.decision === "paper"
+                  ? edit.status === "already_applied"
+                    ? "Already in the latest draft"
+                    : isExportableEdit(edit)
+                      ? "Paper correction selected"
+                      : "Selected correction needs attention"
+                  : "Latest draft kept"}
+              </b>
+              <p>
+                {edit.decision === "paper"
+                  ? edit.status === "already_applied"
+                    ? "This reading is already present. It will not create a tracked change."
+                    : isExportableEdit(edit)
+                      ? "It will be included as a tracked change."
+                      : "Resolve its reading or target before exporting."
+                  : "This paper suggestion will not change the draft."}
+              </p>
+            </div>
+            <button
+              aria-label="Change this decision"
+              disabled={busy}
+              onClick={() => patch({ decision: null })}
+            >
+              <RotateCcw size={16} />
+            </button>
+          </div>
+        ) : (
+          <div className="doc-decision-actions">
+            <button
+              className="doc-button primary"
+              disabled={busy || missingReading || !canApply}
+              onClick={() =>
+                confirmed ? patch({ decision: "paper" }) : confirmAndApply()
+              }
+            >
+              <PenLine size={16} />
+              {!confirmed
+                ? "Confirm & use paper"
+                : edit.status === "conflict"
+                  ? "Replace latest with paper"
+                  : "Use paper correction"}
+            </button>
+            <button
+              className="doc-button"
+              disabled={busy || changed}
+              onClick={() => patch({ decision: "current" })}
+            >
+              Keep latest draft
+            </button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -1686,9 +1806,7 @@ function ExportStage({
       <div>
         <span className="doc-eyebrow">03 / RETURN TO WORD</span>
         <h1>
-          {result
-            ? "Your changes,\nback in the draft."
-            : "One draft.\nEvery decision accounted for."}
+          {result ? "Word files ready" : "Review your Word export"}
         </h1>
         <p className="doc-section-intro">
           Download an editable Word file with genuine tracked changes. Accept or
@@ -2137,7 +2255,7 @@ export default function DocumentApp() {
     .find((edit) => filteredEdits.includes(edit));
 
   return (
-    <div className="doc-app">
+    <div className={`doc-app doc-stage-${session ? stage : "landing"}`}>
       <a className="doc-skip" href="#doc-main">
         Skip to document
       </a>
@@ -2152,11 +2270,11 @@ export default function DocumentApp() {
           {session ? (
             <>
               <FileText size={15} />
-              <span>{session.filename}</span>
+              <span title={session.currentFilename}>{session.currentFilename}</span>
               <span className="doc-header-mode">DOCUMENT REVIEW</span>
             </>
           ) : (
-            <span>THE PAPER IS STILL PART OF THE DOCUMENT.</span>
+            <span>Paper corrections for Word documents</span>
           )}
         </div>
         <a className="doc-legacy-link" href="/?mode=workbooks" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>
@@ -2255,7 +2373,7 @@ export default function DocumentApp() {
                 onClick={() => currentInput.current?.click()}
                 disabled={!!busy}
               >
-                Update <Upload size={13} />
+                Update draft <Upload size={13} />
               </button>
             </div>
           </div>
@@ -2283,10 +2401,9 @@ export default function DocumentApp() {
           />
           {session.demo && (
             <div className="doc-session-example">
-              <span className="doc-example-label">WORKING EXAMPLE</span>
+              <span className="doc-example-label">Prepared example</span>
               <p>
-                Two reviewers marked the printed draft. The author also changed
-                the digital copy. Choose what survives.
+                Two reviewers, one newer Word draft. These example readings are prepared, not live recognition.
               </p>
               <a href={session.baselineUrl} download>
                 Original Word file <ArrowDownToLine size={13} />
@@ -2353,21 +2470,9 @@ export default function DocumentApp() {
           {stage === "prepare" && (
             <div className="doc-prepare-layout">
               <section className="doc-prepare-copy">
-                <span className="doc-eyebrow">01 / TAKE IT TO PAPER</span>
+                <span className="doc-eyebrow">Prepare a review copy</span>
                 <h1>
-                  {session.trial ? (
-                    <>
-                      Try your own
-                      <br />
-                      handwriting.
-                    </>
-                  ) : (
-                    <>
-                      Make room
-                      <br />
-                      for your edits.
-                    </>
-                  )}
+                  {session.trial ? "Test your handwriting" : "Print and mark your document"}
                 </h1>
                 <p className="doc-section-intro">
                   Print this review copy, then mark it with a red or blue pen.
@@ -2464,7 +2569,7 @@ export default function DocumentApp() {
                   </p>
                 </div>
                 <div className="doc-latest-note">
-                  <span className="doc-eyebrow">THE DRAFT MOVED ON?</span>
+                  <span className="doc-eyebrow">Have a newer Word file?</span>
                   <p>
                     Upload the newer Word file. We’ll compare each paper
                     correction with the text that is there now.
@@ -2495,8 +2600,11 @@ export default function DocumentApp() {
             <>
               <div className="doc-review-heading">
                 <div>
-                  <span className="doc-eyebrow">02 / EVERY MARK HAS A SAY</span>
-                  <h1>Bring the drafts together.</h1>
+                  <h1>Review corrections</h1>
+                  <p className="doc-review-summary">
+                    {session.edits.length - pendingCount} reviewed ·{" "}
+                    {pendingCount} remaining
+                  </p>
                 </div>
                 <div className="doc-review-heading-actions">
                   <label>
