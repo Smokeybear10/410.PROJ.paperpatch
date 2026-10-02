@@ -1,5 +1,4 @@
 from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
@@ -33,13 +32,7 @@ FUTURES: dict[tuple[str, str], Future] = {}
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    recover_interrupted_jobs()
-    yield
-
-
-app = FastAPI(title='PaperPatch', docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title='PaperPatch', docs_url=None, redoc_url=None)
 
 class Config(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -236,23 +229,17 @@ def scan_record(session: dict, scan_id: str) -> dict:
         raise HTTPException(404, 'Paper source not found.')
     return scan
 
-def recover_interrupted_jobs() -> None:
-    with LOCK:
-        for session_path in DATA.glob('*/session.json'):
-            try:
-                session = load(session_path.parent.name)
-            except (ValueError, OSError):
-                logger.exception('Could not restore a stored session')
-                continue
-            interrupted = False
-            for scan in session['scans']:
-                if scan['status'] not in ('queued', 'processing') or (session['id'], scan['id']) in ACTIVE_JOBS:
-                    continue
-                scan.update(status='failed', stage='Interrupted', finishedAt=review.now(),
-                            error='PaperPatch restarted before this page finished. Retry this source to read the saved original.')
-                interrupted = True
-            if interrupted:
-                changed(session)
+def recover_interrupted_jobs(session: dict) -> None:
+    interrupted = False
+    for scan in session['scans']:
+        if scan['status'] not in ('queued', 'processing') or (session['id'], scan['id']) in ACTIVE_JOBS:
+            continue
+        scan.update(status='failed', stage='Interrupted', finishedAt=review.now(),
+                    error='PaperPatch restarted before this page finished. Retry this source to read the saved original.')
+        interrupted = True
+    if interrupted:
+        changed(session)
+
 
 def process_scan(sid: str, scan_id: str) -> None:
     try:
@@ -381,6 +368,7 @@ def create_session(file: UploadFile) -> dict:
 def get_session(sid: str) -> dict:
     with LOCK:
         session = load(sid)
+        recover_interrupted_jobs(session)
         decisions = session['reviewDecisions'].copy()
         refresh(session)
         if decisions != session['reviewDecisions']:
