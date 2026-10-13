@@ -1,6 +1,6 @@
 # PAPERPATCH | Paper to Word
 
-**[Download the test build](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest)** · **[Watch the v0.1.0 walkthrough](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/download/v0.1.0/paperpatch-walkthrough.mp4)**
+**[Download the test build](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest)** · **[Watch the 2-minute demo](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/download/v0.1.1/paperpatch-demo-v0.1.1.mp4)**
 
 Compare handwritten corrections with the latest Word draft, choose what to keep, and export native tracked changes.
 
@@ -42,11 +42,13 @@ The [release ZIP](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/l
 - Preserve unrelated changes and document parts. Export checks verify the approved text and that rejecting the revisions restores the original text and formatting.
 - Block export while readings, pages, marks, or overlapping corrections still need review.
 
-The working example contains prepared readings and illustrative pen marks. It exercises review, conflicts, and export without running OCR. The walkthrough records that example using captioned screenshots. **Try a real-pen check** opens a separate capture exercise with no prepared readings.
+The working example contains prepared readings and illustrative pen marks. It exercises review, conflicts, and export without running OCR. The 1:59 demo is a continuous recording of the current app, including the actual tracked and clean Word downloads, with captions and no spoken audio. **Try a real-pen check** opens a separate capture exercise with no prepared readings.
 
 ## Limits
 
 Handwriting recognition can miss or misread writing; every automatic reading needs confirmation. A physically printed, pen-written, phone-photographed round trip has not yet been validated. Document preservation checks do not establish handwriting accuracy.
+
+In a November 17 development check using 48 human handwriting crops composited onto generated pages, capture located all 48 targets. The primary reading was exact on 23; the correct text appeared in either suggestion on 27. These were known development examples, not a held-out or physical-camera accuracy result. The remaining 21 needed manual transcription beyond either suggestion.
 
 Word files must be under 10 MB, with at most 60 body paragraphs and eight review pages. Edits are limited to ordinary text paragraphs. Tables, fields, hyperlinks, existing tracked changes, and other complex content remain protected. The review PDF reflows body text rather than reproducing the original Word layout.
 
