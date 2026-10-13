@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Check,
   CheckCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -53,8 +54,8 @@ const statusNames: Record<DocumentEdit["status"], string> = {
 
 function editLabel(edit: DocumentEdit): string {
   if (edit.decision === "paper" && edit.status === "already_applied") return "Already in draft";
-  if (edit.decision === "paper") return "Use paper";
-  if (edit.decision === "current") return "Keep draft";
+  if (edit.decision === "paper") return "Paper edit selected";
+  if (edit.decision === "current") return "Current text kept";
   if (edit.status === "already_applied") return "Already applied";
   if (!edit.confirmed && edit.status === "ready") return "Check reading";
   return statusNames[edit.status];
@@ -153,8 +154,8 @@ function Landing({
     <main className="doc-library" id="doc-main">
       <div className="doc-library-heading">
         <div>
-          <h1>Document review</h1>
-          <p>Bring corrections on paper into your latest Word draft.</p>
+          <h1>Documents</h1>
+          <p>Review paper edits against your latest Word draft.</p>
         </div>
         <span className="doc-local-label">Files stay on this computer</span>
       </div>
@@ -179,11 +180,11 @@ function Landing({
             if (file && !busy) onUpload(file);
           }}
         >
-          <div className="doc-section-number">01 / Start a review</div>
+          <div className="doc-section-number">New document</div>
           <h2 id="new-review-heading">Open a Word document</h2>
           <p>
-            We’ll make a printable review copy. Mark it up, add a photo, then
-            choose which corrections to keep.
+            Start with a .docx file. Print a review copy, mark your changes,
+            then bring the photo back here.
           </p>
           <button
             className="doc-button primary"
@@ -220,14 +221,14 @@ function Landing({
           className="doc-example-review"
           aria-labelledby="example-review-heading"
         >
-          <div className="doc-section-number">02 / Try it first</div>
+          <div className="doc-section-number">Sample document</div>
           <div className="doc-example-title">
-            <h2 id="example-review-heading">Two reviewers. One draft.</h2>
+            <h2 id="example-review-heading">Review an example</h2>
             <span className="doc-sample-tag">Example</span>
           </div>
           <p>
-            Someone changed the Word file after it was printed. Decide which
-            edit belongs in the final copy.
+            Compare two reviewers’ paper edits with a Word draft that changed
+            after printing.
           </p>
           <div
             className="doc-sample-comparison"
@@ -494,11 +495,6 @@ function ProofViewer({
           </button>
         </div>
       </div>
-      {scan?.source === "demo" && (
-        <div className="doc-example-strip">
-          Illustrative source · prepared readings · not an OCR accuracy test
-        </div>
-      )}
       {scan && <CaptureReport scan={scan} />}
       {captureProblems.length > 0 && (
         <div className="doc-capture-problem">
@@ -751,8 +747,8 @@ function ProofViewer({
               {unresolvedMarks.length
                 ? `Account for ${unresolvedMarks.length} unresolved pen mark${unresolvedMarks.length === 1 ? "" : "s"} before checking this page.`
                 : pageChecked
-                  ? "You confirmed the page was inspected for missed marks."
-                  : "Recognition can miss writing. Look beyond the highlighted regions."}
+                  ? "You checked for missed marks."
+                  : "Check for handwriting outside the highlighted areas."}
             </p>
           </div>
           <button
@@ -972,10 +968,10 @@ function EditInspector({
     >
       <div className="doc-inspector-top">
         <span className="doc-eyebrow">
-          Correction {String(index + 1).padStart(2, "0")} /{" "}
-          {String(session.edits.length).padStart(2, "0")}
+          {edit.reviewer} · Page {edit.page}
         </span>
         <div>
+          <span className="doc-correction-position">{index + 1} / {session.edits.length}</span>
           <button
             aria-label="Previous correction"
             disabled={!hasPrevious || changed || busy}
@@ -995,31 +991,17 @@ function EditInspector({
       <div className="doc-inspector-body">
         <div className="doc-correction-heading">
           <h2>{editAction(edit)} text</h2>
-          <div className="doc-edit-author">
-            <span className="doc-avatar">
-              {edit.reviewer.slice(0, 1).toUpperCase()}
-            </span>
-            <b>{edit.reviewer}</b>
-            <SourceBadge edit={edit} />
+          <SourceBadge edit={edit} />
+        </div>
+        {!edit.decision && edit.status !== "ready" && (
+          <div className={`doc-state-note ${edit.status === "conflict" || edit.status === "overlap" ? "conflict" : ""}`}>
+            <CircleAlert size={16} />
+            <details>
+              <summary>{edit.status === "conflict" ? "Word draft changed after printing" : statusNames[edit.status]}</summary>
+              <p>{edit.reason || "Check the source before choosing which text to keep."}</p>
+            </details>
           </div>
-        </div>
-        <div
-          className={`doc-state-note ${edit.status === "conflict" || edit.status === "overlap" ? "conflict" : ""}`}
-        >
-          <CircleAlert size={16} />
-          <details>
-            <summary>
-              {edit.decision === "current" || isExportableEdit(edit) ||
-              (edit.decision === "paper" && edit.status === "already_applied")
-                ? editLabel(edit)
-                : statusNames[edit.status]}
-            </summary>
-            <p>
-              {edit.reason ||
-                "Check the reading against the source, then choose what belongs in the draft."}
-            </p>
-          </details>
-        </div>
+        )}
         {edit.cropUrl && (
           <div className="doc-crop">
             <span className="doc-eyebrow">Source mark</span>
@@ -1030,43 +1012,22 @@ function EditInspector({
           </div>
         )}
         <div className="doc-comparison">
-          <div>
-            <span className="doc-eyebrow">Printed</span>
-            <p className="doc-original-text">
-              {edit.baseText || <em>Insertion point</em>}
-            </p>
+          <div className="doc-printed-reference">
+            <span>Printed copy</span>
+            <span>{edit.baseText || <em>Insertion point</em>}</span>
           </div>
-          <div className={edit.currentText !== edit.baseText ? "changed" : ""}>
-            <span className="doc-eyebrow">
-              Latest Word{" "}
-              {edit.currentText !== edit.baseText && <span>changed</span>}
-            </span>
-            <p>
-              {edit.currentText || (
-                <em>
-                  {edit.start === edit.end
-                    ? "Insertion point"
-                    : "Passage absent"}
-                </em>
-              )}
-            </p>
+          <div className={`doc-compare-current ${edit.currentText !== edit.baseText ? "changed" : ""}`}>
+            <span className="doc-eyebrow">Current draft</span>
+            <p>{edit.currentText || <em>{edit.start === edit.end ? "Insertion point" : "Passage absent"}</em>}</p>
           </div>
           <label className="doc-replacement-label">
-            <span className="doc-eyebrow">
-              On paper <span>{confirmed ? "confirmed" : "check reading"}</span>
-            </span>
+            <span className="doc-eyebrow">Paper edit <span>{confirmed ? "confirmed" : "check reading"}</span></span>
             <textarea
               value={replacement}
               maxLength={2000}
               rows={2}
               disabled={busy || edit.decision !== null}
-              placeholder={
-                edit.kind === "replace"
-                  ? "Type the replacement written above the crossed-out words"
-                  : edit.kind === "insert" || edit.start === edit.end
-                    ? "Type the words to insert"
-                    : "Leave empty for a deletion"
-              }
+              placeholder={edit.kind === "replace" ? "Words written above the crossed-out text" : edit.kind === "insert" || edit.start === edit.end ? "Words to insert" : "Empty for a deletion"}
               onChange={(event) => updateReplacement(event.target.value)}
             />
           </label>
@@ -1081,9 +1042,7 @@ function EditInspector({
                   ? "Keeping the latest draft"
                   : edit.status === "already_applied"
                     ? "Already in the latest draft"
-                    : edit.decision === "paper"
-                      ? "Selected Word change"
-                      : "If you use this correction"}
+                    : "In the document"}
               </span>
               <p>
                 {currentCharacters.slice(0, previewStart).join("")}
@@ -1175,7 +1134,7 @@ function EditInspector({
         {!edit.decision && edit.status === "overlap" && (
           <p className="doc-fine-print">
             To use this version, select the other correction for this passage
-            and choose “Keep latest draft” to dismiss it. Then return here.
+            and choose “Keep current text” to dismiss it. Then return here.
           </p>
         )}
         {!canApply && !["already_applied", "overlap"].includes(edit.status) && (
@@ -1218,18 +1177,18 @@ function EditInspector({
                   ? edit.status === "already_applied"
                     ? "Already in the latest draft"
                     : isExportableEdit(edit)
-                      ? "Paper correction selected"
+                      ? "Paper edit selected"
                       : "Selected correction needs attention"
-                  : "Latest draft kept"}
+                  : "Current text kept"}
               </b>
               <p>
                 {edit.decision === "paper"
                   ? edit.status === "already_applied"
                     ? "This reading is already present. It will not create a tracked change."
                     : isExportableEdit(edit)
-                      ? "It will be included as a tracked change."
+                      ? "Included as a tracked change."
                       : "Resolve its reading or target before exporting."
-                  : "This paper suggestion will not change the draft."}
+                  : "This passage stays as it is."}
               </p>
             </div>
             <button
@@ -1250,18 +1209,14 @@ function EditInspector({
               }
             >
               <PenLine size={16} />
-              {!confirmed
-                ? "Confirm & use paper"
-                : edit.status === "conflict"
-                  ? "Replace latest with paper"
-                  : "Use paper correction"}
+              {confirmed ? "Use paper edit" : "Confirm & use edit"}
             </button>
             <button
               className="doc-button"
               disabled={busy || changed}
               onClick={() => patch({ decision: "current" })}
             >
-              Keep latest draft
+              Keep current text
             </button>
           </div>
         )}
@@ -1765,8 +1720,7 @@ function DraftPreview({ session }: { session: DocumentSession }) {
       </div>
       <p className="doc-fine-print">
         {hasBlockedSelection && "Selected corrections that still need attention are not shown as changes. "}
-        Text preview. The Word export retains the current document’s supported
-        formatting.
+        Text preview · supported Word formatting is kept in the download.
       </p>
     </section>
   );
@@ -1800,14 +1754,11 @@ function ExportStage({
   const result = session.pendingCaptures > 0 || blocked.length > 0 || pending.length > 0 || unchecked.length > 0 || unresolvedMarks > 0 ? null : session.export;
   return (
     <div className="doc-export-layout">
-      <div>
-        <span className="doc-eyebrow">Export</span>
-        <h1>
-          {result ? "Word files ready" : "Review your Word export"}
-        </h1>
-        <p className="doc-section-intro">
-          Download your reviewed changes. Accept or reject them in Word.
-        </p>
+      <aside className="doc-export-panel" aria-label="Word export">
+        <button className="doc-export-back" onClick={review}><ArrowLeft size={15} /> Back to review</button>
+        <h2 className="doc-export-title">Export document</h2>
+        <p className="doc-export-filename"><FileText size={17} /> {session.currentFilename}</p>
+        <p className="doc-section-intro">Keep the changes editable in Word, or download a clean copy.</p>
         <div className={`doc-export-counts ${alreadyPresent.length ? "has-already-present" : ""}`}>
           <span>
             <b>{accepted.length}</b> paper change{accepted.length === 1 ? "" : "s"}
@@ -1820,7 +1771,7 @@ function ExportStage({
                   .length
               }
             </b>{" "}
-            draft passages kept
+            passage{session.edits.filter((edit) => edit.decision === "current").length === 1 ? "" : "s"} kept
           </span>
           <span>
             <b>
@@ -1835,7 +1786,7 @@ function ExportStage({
             <div className="doc-receipt-top">
               <FileCheck2 size={26} />
               <div>
-                <b>Export preservation checks passed</b>
+                <b>Word files ready</b>
                 <p>
                   {result.changeCount} corrections ·{" "}
                   {result.verification.changedParagraphCount} paragraph
@@ -1844,26 +1795,19 @@ function ExportStage({
               </div>
             </div>
             <a href={result.url} className="doc-button primary" download>
-              <ArrowDownToLine size={17} /> Download tracked Word file
+              <ArrowDownToLine size={17} /> Download with tracked changes
             </a>
             <a href={result.cleanUrl} className="doc-button" download>
-              <FileText size={17} /> Download clean accepted copy
+              <FileText size={17} /> Download clean copy
             </a>
-            <div className="doc-receipt-links">
-              <a href={result.inputUrl} download>
-                Exact input file
-              </a>
-              <a href={result.auditUrl} download>
-                Change receipt · JSON
-              </a>
-            </div>
-            <p className="doc-fine-print">
-              File checks verify the recorded changes and preserved package
-              parts. They do not establish that a handwriting reading is
-              correct.
-            </p>
             <details>
-              <summary>Inspect the verification</summary>
+              <summary>Export details</summary>
+              <p>Export preservation checks passed.</p>
+              <p className="doc-fine-print">These checks cover the Word file and its revisions, not handwriting accuracy.</p>
+              <div className="doc-receipt-links">
+                <a href={result.inputUrl} download>Original input</a>
+                <a href={result.auditUrl} download>Change receipt · JSON</a>
+              </div>
               <dl>
                 <dt>Tracked revisions</dt>
                 <dd>{result.verification.revisionCount}</dd>
@@ -1973,7 +1917,7 @@ function ExportStage({
             Create Word files
           </button>
         )}
-      </div>
+      </aside>
       <DraftPreview session={session} />
     </div>
   );
@@ -1991,7 +1935,7 @@ export default function DocumentApp() {
   const [source, setSource] = useState("page:1");
   const [manual, setManual] = useState(false);
   const [manualMarkId, setManualMarkId] = useState<string | null>(null);
-  const [reviewer, setReviewer] = useState("Reviewer");
+  const [reviewer, setReviewer] = useState("");
   const [physicalCapture, setPhysicalCapture] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "conflicts">("all");
   const currentInput = useRef<HTMLInputElement>(null);
@@ -2251,30 +2195,56 @@ export default function DocumentApp() {
     .find((edit) => filteredEdits.includes(edit));
 
   return (
-    <div className={`doc-app doc-stage-${session ? stage : "landing"}`}>
+    <div className={`doc-app ${session ? "doc-workbench" : ""} doc-stage-${session ? stage : "landing"}`}>
       <a className="doc-skip" href="#doc-main">
         Skip to document
       </a>
       <header className="doc-header">
         <a className="doc-brand" href="/?mode=documents" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>
-          <Mark />
-          <span>
-            PAPERPATCH
-          </span>
+          <Mark small />
+          <span>PaperPatch</span>
         </a>
         <div className="doc-header-context">
           {session ? (
-            <>
-              <FileText size={15} />
-              <span title={session.currentFilename}>{session.currentFilename}</span>
-            </>
+            <h1 className="doc-filename" title={session.currentFilename}>{session.currentFilename}</h1>
           ) : (
             <span>Paper to Word</span>
           )}
         </div>
-        <a className="doc-legacy-link" href="/?mode=workbooks" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>
-          Spreadsheet tool <ArrowRight size={14} />
-        </a>
+        {session && (
+          <nav className="doc-stage-nav" aria-label="Document workflow">
+            {([
+              ["prepare", "Print"],
+              ["review", "Review"],
+              ["export", "Export"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                aria-current={stage === value ? "step" : undefined}
+                className={stage === value ? "active" : ""}
+                onClick={() => changeStage(value)}
+              >
+                {label}
+                {value === "review" && pendingCount > 0 && <b>{pendingCount}</b>}
+              </button>
+            ))}
+          </nav>
+        )}
+        {session && <span className="doc-save-status" role="status">{busy ? busy.startsWith("/") ? "Saving…" : "Working…" : "Saved locally"}</span>}
+        <details className="doc-file-menu" onKeyDown={(event) => { if (event.key === "Escape") event.currentTarget.open = false; }}>
+          <summary>File <ChevronDown size={14} /></summary>
+          <div className="doc-file-menu-items">
+            {session && <>
+              <button disabled={!!busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); currentInput.current?.click(); }}>
+                <Upload size={16} /> Update Word draft
+              </button>
+              <a href={session.baselineUrl} download><ArrowDownToLine size={16} /> Original Word file</a>
+              <a href={session.currentUrl} download><FileText size={16} /> Current Word draft</a>
+            </>}
+            <a href="/?mode=documents" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>All documents</a>
+            <a href="/?mode=workbooks" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>Spreadsheet tool <ArrowRight size={14} /></a>
+          </div>
+        </details>
       </header>
       {error && (
         <div className="doc-message error" role="alert">
@@ -2308,7 +2278,7 @@ export default function DocumentApp() {
         </div>
       )}
       {busy && (
-        <div className="doc-busy" role="status">
+        <div className={`doc-busy ${session && busy.startsWith("/") && busy !== "/export" ? "doc-sr-only" : ""}`} role="status">
           <LoaderCircle className="doc-spin" size={16} />
           {busy === "photo"
             ? "Aligning the page and reading colored pen marks. This may take a minute…"
@@ -2337,39 +2307,40 @@ export default function DocumentApp() {
       ) : (
         <main id="doc-main" className="doc-workspace">
           <div className="doc-workflow-bar">
-            <nav aria-label="Document workflow">
-              {(
-                [
-                  ["prepare", "01", "Prepare"],
-                  ["review", "02", "Review"],
-                  ["export", "03", "Return to Word"],
-                ] as const
-              ).map(([value, number, label]) => (
-                <button
-                  key={value}
-                  aria-current={stage === value ? "step" : undefined}
-                  className={stage === value ? "active" : ""}
-                  onClick={() => changeStage(value)}
-                >
-                  <span>{number}</span>
-                  {label}
-                  {value === "review" && pendingCount > 0 && (
-                    <b>{pendingCount}</b>
-                  )}
-                </button>
-              ))}
-            </nav>
-            <div className="doc-current-file">
-              <span className="doc-mobile-filename" title={session.currentFilename}>
-                {session.currentFilename}
-              </span>
-              <button
-                onClick={() => currentInput.current?.click()}
-                disabled={!!busy}
-              >
-                Update draft <Upload size={14} />
-              </button>
+            <div className="doc-session-meta">
+              {session.demo && (
+                <details className="doc-session-example">
+                  <summary>Prepared example <ChevronDown size={13} /></summary>
+                  <div className="doc-note-content">
+                    <p>These pages use prepared readings, not live handwriting recognition.</p>
+                    <p>Two reviewers marked the same printed copy. The Word draft also changed after printing.</p>
+                  </div>
+                </details>
+              )}
+              {session.warnings.length > 0 && (
+                <details className="doc-session-warnings">
+                  <summary><CircleAlert size={14} /> {session.warnings.length} document note{session.warnings.length === 1 ? "" : "s"}</summary>
+                  <div className="doc-note-content">
+                    {session.warnings.map((warning, index) => <p key={index}>{warning}</p>)}
+                  </div>
+                </details>
+              )}
+              <span className="doc-toolbar-status">{pendingCount ? `${pendingCount} corrections to review` : `${session.edits.length} corrections reviewed`}</span>
             </div>
+            {stage === "review" && (
+              <div className="doc-review-heading-actions">
+                <label>
+                  <span>Reviewer</span>
+                  <input aria-label="Reviewer for next photo" placeholder="Name" value={reviewer} onChange={(event) => setReviewer(event.target.value)} maxLength={80} />
+                </label>
+                <button className="doc-button compact" disabled={!!busy || (!!session.trial && session.scans.length > 0)} onClick={() => photoInput.current?.click()}>
+                  <ImagePlus size={16} /> Add photo
+                </button>
+                <button className="doc-button compact" disabled={!!busy || !session.paragraphs.some((paragraph) => paragraph.editable)} onClick={() => openManual()}>
+                  <Plus size={16} /> Add correction
+                </button>
+              </div>
+            )}
           </div>
           <input
             ref={currentInput}
@@ -2393,17 +2364,6 @@ export default function DocumentApp() {
               event.target.value = "";
             }}
           />
-          {session.demo && (
-            <div className="doc-session-example">
-              <span className="doc-example-label">Prepared example</span>
-              <p>
-                Two reviewers, one newer Word draft. These example readings are prepared, not live recognition.
-              </p>
-              <a href={session.baselineUrl} download>
-                Original Word file <ArrowDownToLine size={13} />
-              </a>
-            </div>
-          )}
           {session.trial && (
             <section className="doc-trial-bar" aria-label="Real-pen check">
               <div>
@@ -2450,27 +2410,13 @@ export default function DocumentApp() {
               )}
             </section>
           )}
-          {session.warnings.length > 0 && (
-            <details className="doc-session-warnings">
-              <summary>
-                <CircleAlert size={15} /> {session.warnings.length} document
-                note{session.warnings.length === 1 ? "" : "s"}
-              </summary>
-              {session.warnings.map((warning, index) => (
-                <p key={index}>{warning}</p>
-              ))}
-            </details>
-          )}
           {stage === "prepare" && (
             <div className="doc-prepare-layout">
               <section className="doc-prepare-copy">
-                <span className="doc-eyebrow">Prepare a review copy</span>
-                <h1>
-                  {session.trial ? "Test your handwriting" : "Print and mark your document"}
-                </h1>
+                <h2 className="doc-prepare-title">{session.trial ? "Test your handwriting" : "Print review copy"}</h2>
                 <p className="doc-section-intro">
-                  Print this review copy, then mark it with a red or blue pen.
-                  The original Word file stays intact.
+                  Mark this copy with a red or blue pen. Your original Word
+                  file stays intact.
                 </p>
                 <a
                   className="doc-button primary"
@@ -2556,17 +2502,12 @@ export default function DocumentApp() {
                     JPG, PNG or WebP · one page per photo · up to 20 MB and 25
                     megapixels
                   </p>
-                  <p className="doc-fine-print">
-                    Take a phone photo, then transfer or export it as a JPEG to
-                    this computer to upload. Keep the whole page and all four
-                    markers visible.
-                  </p>
+
                 </div>
                 <div className="doc-latest-note">
                   <span className="doc-eyebrow">Have a newer Word file?</span>
                   <p>
-                    Upload the newer Word file. We’ll compare each paper
-                    correction with the text that is there now.
+                    Use it as the base for your reviewed corrections.
                   </p>
                   <button
                     className="doc-text-link"
@@ -2592,47 +2533,6 @@ export default function DocumentApp() {
           )}
           {stage === "review" && (
             <>
-              <div className="doc-review-heading">
-                <div>
-                  <h1>Review corrections</h1>
-                  <p className="doc-review-summary">
-                    {session.edits.length - pendingCount} reviewed ·{" "}
-                    {pendingCount} remaining
-                  </p>
-                </div>
-                <div className="doc-review-heading-actions">
-                  <label>
-                    <span className="doc-sr-only">Reviewer for next photo</span>
-                    <input
-                      aria-label="Reviewer for next photo"
-                      value={reviewer}
-                      onChange={(event) => setReviewer(event.target.value)}
-                      maxLength={80}
-                    />
-                  </label>
-                  <button
-                    className="doc-button compact"
-                    disabled={
-                      !!busy || (!!session.trial && session.scans.length > 0)
-                    }
-                    onClick={() => photoInput.current?.click()}
-                  >
-                    <ImagePlus size={16} /> Add photo
-                  </button>
-                  <button
-                    className="doc-button compact"
-                    disabled={
-                      !!busy ||
-                      !session.paragraphs.some(
-                        (paragraph) => paragraph.editable,
-                      )
-                    }
-                    onClick={() => openManual()}
-                  >
-                    <Plus size={16} /> Add correction
-                  </button>
-                </div>
-              </div>
               <div className="doc-review-layout">
                 <aside className="doc-change-rail" aria-label="Corrections">
                   <div className="doc-change-rail-top">
@@ -2686,8 +2586,9 @@ export default function DocumentApp() {
                             <span>{edit.reviewer}</span>
                             <span>{editAction(edit)}</span>
                           </div>
-                          <p>
-                            {edit.baseText || edit.replacement || "Insertion"}
+                          <p className="doc-change-text">
+                            <span>{edit.baseText || "Insert"}</span>
+                            {edit.replacement && <><span className="doc-change-arrow" aria-hidden="true">→</span><span>{edit.replacement}</span></>}
                           </p>
                           <span
                             className={`doc-edit-status ${!edit.decision && ["conflict", "overlap", "missing", "protected"].includes(edit.status) ? "conflict" : ""}`}
@@ -2714,7 +2615,7 @@ export default function DocumentApp() {
                     className="doc-rail-export"
                     onClick={() => changeStage("export")}
                   >
-                    Preview Word changes <ArrowRight size={16} />
+                    Review document <ArrowRight size={16} />
                   </button>
                 </aside>
                 <ProofViewer
@@ -2808,8 +2709,8 @@ export default function DocumentApp() {
             />
           )}
           <footer className="doc-workspace-footer">
-            <span>Saved on this computer</span>
-            <span>Original files preserved · Every write reviewed</span>
+            <span>Files stored on this computer</span>
+            <span>{session.pages.length} printed page{session.pages.length === 1 ? "" : "s"}</span>
           </footer>
           {manual && (
             <ManualDialog
