@@ -150,70 +150,28 @@ function Landing({
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   return (
-    <main className="doc-landing" id="doc-main">
-      <RecentDocumentReviews busy={!!busy} />
-      <div className="doc-introduction">
-        <span className="doc-eyebrow">PAPER → REVIEW → WORD</span>
-        <h1>
-          Paper edits,
-          <br />
-          back in Word.
-        </h1>
-        <p className="doc-lead">
-          Compare handwritten corrections with your latest Word draft. Choose
-          each change, then export an editable document with tracked changes.
-        </p>
-        <div className="doc-landing-actions">
-          <button
-            className="doc-button primary"
-            disabled={!!busy}
-            onClick={onExample}
-          >
-            {busy === "example" ? (
-              <LoaderCircle className="doc-spin" size={18} />
-            ) : (
-              <ArrowRight size={18} />
-            )}{" "}
-            Open working example
-          </button>
-          <button
-            className="doc-button"
-            disabled={!!busy}
-            onClick={() => input.current?.click()}
-          >
-            <Upload size={17} /> Choose Word file
-          </button>
+    <main className="doc-library" id="doc-main">
+      <div className="doc-library-heading">
+        <div>
+          <h1>Document review</h1>
+          <p>Bring corrections on paper into your latest Word draft.</p>
         </div>
-        <p className="doc-fine-print">
-          The example uses illustrative pen marks and prepared readings.
-          <br />
-          Your own documents are processed on this computer.
-        </p>
-        <button
-          className="doc-text-link doc-trial-start"
-          disabled={!!busy}
-          onClick={onTrial}
-        >
-          <PenLine size={16} /> Try a real-pen check <ArrowRight size={14} />
-        </button>
-        <input
-          ref={input}
-          type="file"
-          accept=".docx"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) onUpload(file);
-            event.target.value = "";
-          }}
-        />
-        <div
-          className={`doc-drop-line ${dragging ? "is-dragging" : ""}`}
+        <span className="doc-local-label">Files stay on this computer</span>
+      </div>
+      <div className="doc-start-workspace">
+        <section
+          className={`doc-new-review ${dragging ? "is-dragging" : ""}`}
+          aria-labelledby="new-review-heading"
           onDragOver={(event) => {
             event.preventDefault();
             setDragging(true);
           }}
-          onDragLeave={() => setDragging(false)}
+          onDragLeave={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null)
+            )
+              setDragging(false);
+          }}
           onDrop={(event) => {
             event.preventDefault();
             setDragging(false);
@@ -221,60 +179,93 @@ function Landing({
             if (file && !busy) onUpload(file);
           }}
         >
-          <FileText size={16} /> Or drop a .docx here to prepare a review copy
-        </div>
-      </div>
-      <div
-        className="doc-cover-example"
-        aria-label="Illustration of a paper correction merged into a newer Word draft"
-      >
-        <div className="doc-cover-index">
-          <span>01 / ON PAPER</span>
-          <span>ILLUSTRATION</span>
-        </div>
-        <div className="doc-cover-sheet">
-          <span className="doc-sheet-kicker">
-            NORTHLIGHT / COMMUNITY OPEN NIGHT
-          </span>
-          <h2>A night at the observatory</h2>
+          <div className="doc-section-number">01 / Start a review</div>
+          <h2 id="new-review-heading">Open a Word document</h2>
           <p>
-            Each session is limited to{" "}
-            <span className="doc-pen-correction">
-              <del>24</del>
-              <ins>18</ins>
-            </span>{" "}
-            guests and lasts 45 minutes.
+            We’ll make a printable review copy. Mark it up, add a photo, then
+            choose which corrections to keep.
           </p>
-          <p>Doors open at 6:00 pm. The last entry is at 9:00 pm.</p>
-          <div className="doc-cover-margin">Alex’s paper copy</div>
-          <div className="doc-cover-rule" />
-          <span className="doc-sheet-footer">REVIEW COPY · 1 / 1</span>
-        </div>
-        <div className="doc-cover-result">
-          <span className="doc-eyebrow">
-            <Check size={14} /> MERGED INTO THE LATEST WORD DRAFT
+          <button
+            className="doc-button primary"
+            disabled={!!busy}
+            onClick={() => input.current?.click()}
+          >
+            <Plus size={18} /> Choose Word file
+          </button>
+          <span className="doc-drop-hint">
+            {dragging
+              ? "Drop your document here"
+              : "or drop a .docx into this area"}
           </span>
+          <input
+            ref={input}
+            type="file"
+            accept=".docx"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onUpload(file);
+              event.target.value = "";
+            }}
+          />
+          <div className="doc-review-sequence" aria-label="Review workflow">
+            <span>Print & mark</span>
+            <ArrowRight size={14} aria-hidden="true" />
+            <span>Check corrections</span>
+            <ArrowRight size={14} aria-hidden="true" />
+            <span>Export to Word</span>
+          </div>
+        </section>
+        <section
+          className="doc-example-review"
+          aria-labelledby="example-review-heading"
+        >
+          <div className="doc-section-number">02 / Try it first</div>
+          <div className="doc-example-title">
+            <h2 id="example-review-heading">Two reviewers. One draft.</h2>
+            <span className="doc-sample-tag">Example</span>
+          </div>
           <p>
-            Each session is limited to <del>30</del> <ins>18</ins> guests.
+            Someone changed the Word file after it was printed. Decide which
+            edit belongs in the final copy.
           </p>
-          <span className="doc-cover-result-note">
-            Word had changed to 30. Choose 18 from paper and keep the newer 9:30
-            last entry.
-          </span>
-        </div>
+          <div
+            className="doc-sample-comparison"
+            aria-label="Example conflict: printed 24, latest Word 30, paper correction 18"
+          >
+            <div>
+              <span>Printed</span>
+              <b>24</b>
+            </div>
+            <div>
+              <span>Latest Word</span>
+              <b>30</b>
+            </div>
+            <div>
+              <span>On paper</span>
+              <b>18</b>
+            </div>
+          </div>
+          <button className="doc-button" disabled={!!busy} onClick={onExample}>
+            {busy === "example" ? (
+              <LoaderCircle className="doc-spin" size={17} />
+            ) : (
+              <ArrowRight size={17} />
+            )}
+            Open working example
+          </button>
+          <p className="doc-sample-note">
+            Prepared readings. No printer needed.
+          </p>
+        </section>
       </div>
-      <div className="doc-landing-bottom">
-        <span>
-          01 <b>Print & mark</b> <small>Use a red or blue pen.</small>
-        </span>
-        <span>
-          02 <b>Review together</b>{" "}
-          <small>See paper and the latest draft.</small>
-        </span>
-        <span>
-          03 <b>Return to Word</b> <small>Download real tracked changes.</small>
-        </span>
-      </div>
+      <RecentDocumentReviews busy={!!busy} />
+      <footer className="doc-library-footer">
+        <span>Handwriting suggestions always need your review.</span>
+        <button className="doc-text-link" disabled={!!busy} onClick={onTrial}>
+          <PenLine size={15} /> Try a real-pen check <ArrowRight size={14} />
+        </button>
+      </footer>
     </main>
   );
 }
@@ -981,7 +972,7 @@ function EditInspector({
     >
       <div className="doc-inspector-top">
         <span className="doc-eyebrow">
-          CORRECTION {String(index + 1).padStart(2, "0")} /{" "}
+          Correction {String(index + 1).padStart(2, "0")} /{" "}
           {String(session.edits.length).padStart(2, "0")}
         </span>
         <div>
@@ -1017,7 +1008,12 @@ function EditInspector({
         >
           <CircleAlert size={16} />
           <details>
-            <summary>{statusNames[edit.status]}</summary>
+            <summary>
+              {edit.decision === "current" || isExportableEdit(edit) ||
+              (edit.decision === "paper" && edit.status === "already_applied")
+                ? editLabel(edit)
+                : statusNames[edit.status]}
+            </summary>
             <p>
               {edit.reason ||
                 "Check the reading against the source, then choose what belongs in the draft."}
@@ -1026,7 +1022,7 @@ function EditInspector({
         </div>
         {edit.cropUrl && (
           <div className="doc-crop">
-            <span className="doc-eyebrow">SOURCE MARK</span>
+            <span className="doc-eyebrow">Source mark</span>
             <DocumentCropViewer
               src={edit.cropUrl}
               alt={`Source handwriting for ${edit.reviewer}’s correction`}
@@ -1461,6 +1457,7 @@ function ManualDialog({
     <dialog
       ref={dialog}
       className="doc-manual-dialog"
+      aria-labelledby="manual-correction-heading"
       onCancel={(event) => {
         event.preventDefault();
         requestClose();
@@ -1470,7 +1467,7 @@ function ManualDialog({
         <header>
           <div>
             <span className="doc-eyebrow">MANUAL CORRECTION</span>
-            <h2>Point to the exact passage.</h2>
+            <h2 id="manual-correction-heading">Point to the exact passage.</h2>
           </div>
           <button
             type="button"
@@ -1746,7 +1743,7 @@ function DraftPreview({ session }: { session: DocumentSession }) {
   return (
     <section className="doc-draft-preview">
       <div className="doc-preview-heading">
-        <span className="doc-eyebrow">LATEST DRAFT + YOUR DECISIONS</span>
+        <span className="doc-eyebrow">Latest draft with your changes</span>
         <span>
           <i /> Deleted <i /> Inserted
         </span>
@@ -1804,13 +1801,12 @@ function ExportStage({
   return (
     <div className="doc-export-layout">
       <div>
-        <span className="doc-eyebrow">03 / RETURN TO WORD</span>
+        <span className="doc-eyebrow">Export</span>
         <h1>
           {result ? "Word files ready" : "Review your Word export"}
         </h1>
         <p className="doc-section-intro">
-          Download an editable Word file with genuine tracked changes. Accept or
-          reject them in your word processor.
+          Download your reviewed changes. Accept or reject them in Word.
         </p>
         <div className={`doc-export-counts ${alreadyPresent.length ? "has-already-present" : ""}`}>
           <span>
@@ -2263,7 +2259,7 @@ export default function DocumentApp() {
         <a className="doc-brand" href="/?mode=documents" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>
           <Mark />
           <span>
-            PaperPatch<span className="doc-brand-period">.</span>
+            PAPERPATCH
           </span>
         </a>
         <div className="doc-header-context">
@@ -2271,10 +2267,9 @@ export default function DocumentApp() {
             <>
               <FileText size={15} />
               <span title={session.currentFilename}>{session.currentFilename}</span>
-              <span className="doc-header-mode">DOCUMENT REVIEW</span>
             </>
           ) : (
-            <span>Paper corrections for Word documents</span>
+            <span>Paper to Word</span>
           )}
         </div>
         <a className="doc-legacy-link" href="/?mode=workbooks" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>
@@ -2333,14 +2328,12 @@ export default function DocumentApp() {
         </div>
       )}
       {!session ? (
-        <div id="doc-main">
-          <Landing
-            busy={busy}
-            onExample={() => start()}
-            onTrial={() => start(undefined, true)}
-            onUpload={(file) => start(file)}
-          />
-        </div>
+        <Landing
+          busy={busy}
+          onExample={() => start()}
+          onTrial={() => start(undefined, true)}
+          onUpload={(file) => start(file)}
+        />
       ) : (
         <main id="doc-main" className="doc-workspace">
           <div className="doc-workflow-bar">
@@ -2367,13 +2360,14 @@ export default function DocumentApp() {
               ))}
             </nav>
             <div className="doc-current-file">
-              <span className="doc-current-dot" /> Latest:{" "}
-              <b title={session.currentFilename}>{session.currentFilename}</b>
+              <span className="doc-mobile-filename" title={session.currentFilename}>
+                {session.currentFilename}
+              </span>
               <button
                 onClick={() => currentInput.current?.click()}
                 disabled={!!busy}
               >
-                Update draft <Upload size={13} />
+                Update draft <Upload size={14} />
               </button>
             </div>
           </div>
