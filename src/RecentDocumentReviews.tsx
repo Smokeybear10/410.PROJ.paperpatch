@@ -37,14 +37,16 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasOlder, setHasOlder] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [includeSamples, setIncludeSamples] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     setError(false);
     setLoading(true);
-    const url = cursor ? `/api/documents?before=${encodeURIComponent(cursor)}` : "/api/documents";
-    fetch(url, { signal: controller.signal })
+    const params = new URLSearchParams({ includeSamples: String(includeSamples) });
+    if (cursor) params.set("before", cursor);
+    fetch(`/api/documents?${params}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Saved reviews could not be loaded.");
         return reviewsSchema.parse(await response.json());
@@ -63,9 +65,7 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [attempt, cursor]);
-
-  if (!reviews.length && !error) return null;
+  }, [attempt, cursor, includeSamples]);
 
   return (
     <section className="doc-recent" aria-labelledby="recent-reviews-heading">
@@ -74,12 +74,34 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
           <h2 id="recent-reviews-heading">Recent documents</h2>
           <p>Pick up where you left off.</p>
         </div>
+        <label className="doc-recent-sample-toggle">
+          <input
+            type="checkbox"
+            checked={includeSamples}
+            disabled={busy}
+            onChange={(event) => {
+              setIncludeSamples(event.target.checked);
+              setReviews([]);
+              setCursor(null);
+              setExpanded(false);
+              setHasOlder(false);
+              setError(false);
+              setLoading(true);
+            }}
+          />
+          Include sample reviews
+        </label>
         {reviews.length > 3 && (
           <button className="doc-text-link" onClick={() => setExpanded(!expanded)}>
             {expanded ? "Show fewer" : "Show more reviews"}
           </button>
         )}
       </div>
+      {!reviews.length && !error && (
+        <p className="doc-recent-empty" role="status">
+          {loading ? "Loading documents…" : "No documents yet. Open a Word file to start your first review."}
+        </p>
+      )}
       {reviews.length > 0 && (
         <ul>
           {reviews.slice(0, expanded ? reviews.length : 3).map((review) => (

@@ -11,12 +11,19 @@ from backend.document_example import example_docx
 ASSETS = Path(__file__).resolve().parent / 'assets' / 'handwriting-sample'
 TARGETS = ['confidence', 'visible', 'Success', 'speed']
 PARAGRAPHS = [
-    ('Title', 'Notes for the next draft'),
-    ('Normal', 'The project needs more confidence at this stage.'),
-    ('Normal', 'Keep the answer visible until review.'),
-    ('Normal', 'Success is part of learning.'),
-    ('Normal', 'Value honesty over speed in the next draft.'),
-    ('Normal', 'Keep this last sentence unchanged.'),
+    ('Title', 'Peer mentoring statement'),
+    ('Normal', 'I would bring confidence and patience to the peer mentoring programme. '
+     'My first term taught me how much a quiet check-in can matter. I want new students '
+     'to have someone they can ask before a small problem becomes a difficult week.'),
+    ('Normal', 'I want to notice the visible pressures that students may not raise in a group. '
+     'I would start by listening, then agree on one practical next step. Sometimes that '
+     'means finding the right person to help rather than trying to solve everything myself.'),
+    ('Normal', 'Success is part of learning. A missed deadline or a difficult class should '
+     'not end the conversation. I would share what helped me recover from setbacks, '
+     'while leaving room for someone whose experience is different from mine.'),
+    ('Normal', 'I would value steady progress over speed in these conversations. A useful '
+     'meeting should end with a manageable plan and a time to check in again. I can '
+     'offer consistency, honest answers, and the willingness to keep listening.'),
 ]
 
 
@@ -35,7 +42,7 @@ def create_handwriting_sample() -> dict:
             raise ValueError('The handwriting sample does not match its recorded source assets.')
 
     with LOCK:
-        session = new_document(example_docx(PARAGRAPHS), 'handwriting-sample.docx')
+        session = new_document(example_docx(PARAGRAPHS), 'mentoring-statement-draft.docx')
         sid = session['id']
         folder = document_dir(sid)
         sample_folder = folder / 'sample'
@@ -45,8 +52,8 @@ def create_handwriting_sample() -> dict:
         scale = manifest['scale']
         image = Image.open(folder / 'paper' / page['previewPath']).convert('RGBA')
         expected, placements = [], []
-        for index, (before, word) in enumerate(zip(TARGETS, words), 1):
-            paragraph = session['paragraphs'][index]
+        for before, word in zip(TARGETS, words):
+            paragraph = next(item for item in session['paragraphs'] if before in item['text'].split())
             start = paragraph['text'].index(before)
             target = next(item for item in page['words']
                           if item['paragraphId'] == paragraph['id'] and item['start'] == start
@@ -85,7 +92,8 @@ def create_handwriting_sample() -> dict:
             originalUrl=file_url(sid, 'sample/original-source.jpg'),
             provenanceUrl=file_url(sid, 'sample/provenance.json'),
             sourceUrl=source['url'], licenseUrl=source['licenseUrl'], attribution=source['attribution'],
-            description='Real human handwriting from a photographed page, placed on this generated review copy. '
+            description='A fictional mentoring statement with real human handwriting from a photographed page, '
+                        'placed on this generated review copy. '
                         'The strike-throughs are generated. This is an assembled test page, not a phone photo of a printed review.',
         )
         session['_sampleExpected'] = expected

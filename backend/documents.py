@@ -287,7 +287,8 @@ def create_edit(session: dict, paragraph_id: str, start: int, end: int, replacem
 
 
 @router.get('')
-def recent_documents(before: str | None = Query(default=None, pattern=r'^\d{1,20}:[a-f0-9]{32}$')) -> list[dict]:
+def recent_documents(before: str | None = Query(default=None, pattern=r'^\d{1,20}:[a-f0-9]{32}$'),
+                     includeSamples: bool = Query(default=True)) -> list[dict]:
     with LOCK:
         boundary = (int(before.split(':')[0]), before.split(':')[1]) if before else None
         paths = []
@@ -316,6 +317,8 @@ def recent_documents(before: str | None = Query(default=None, pattern=r'^\d{1,20
                     or not isinstance(session.get('scans'), list)
                     or not (path.parent / 'baseline.docx').is_file()
                     or not (path.parent / 'current.docx').is_file()):
+                continue
+            if not includeSamples and (session.get('demo') or session.get('trial') or session.get('sample')):
                 continue
             edits, scans = session['edits'], session['scans']
             if (any(not isinstance(edit, dict) or not isinstance(edit.get('id'), str)

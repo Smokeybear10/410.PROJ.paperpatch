@@ -161,98 +161,42 @@ function Landing({
         </div>
         <span className="doc-local-label">Files stay on this computer</span>
       </div>
-      <div className="doc-start-workspace">
-        <section
-          className={`doc-new-review ${dragging ? "is-dragging" : ""}`}
-          aria-labelledby="new-review-heading"
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={(event) => {
-            if (
-              !event.currentTarget.contains(event.relatedTarget as Node | null)
-            )
-              setDragging(false);
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragging(false);
-            const file = event.dataTransfer.files[0];
-            if (file && !busy) onUpload(file);
-          }}
-        >
-          <div className="doc-section-number">New document</div>
-          <h2 id="new-review-heading">Open a Word document</h2>
-          <p>
-            Start with a .docx file. Print a review copy, mark your changes,
-            then bring the photo back here.
-          </p>
-          <button
-            className="doc-button primary"
-            disabled={!!busy}
-            onClick={() => input.current?.click()}
-          >
-            <Plus size={18} /> Choose Word file
-          </button>
-          <span className="doc-drop-hint">
-            {dragging
-              ? "Drop your document here"
-              : "or drop a .docx into this area"}
-          </span>
-          <input
-            ref={input}
-            type="file"
-            accept=".docx"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onUpload(file);
-              event.target.value = "";
-            }}
-          />
-          <div className="doc-review-sequence" aria-label="Review workflow">
-            <span>Print & mark</span>
-            <ArrowRight size={14} aria-hidden="true" />
-            <span>Check corrections</span>
-            <ArrowRight size={14} aria-hidden="true" />
-            <span>Export to Word</span>
-          </div>
-        </section>
-        <section
-          className="doc-example-review"
-          aria-labelledby="example-review-heading"
-        >
-          <div className="doc-section-number">Handwriting sample</div>
-          <div className="doc-example-title">
-            <h2 id="example-review-heading">Read actual handwriting</h2>
-          </div>
-          <p>
-            Try four handwritten words from a photographed notebook, placed on
-            a review page. Read the image, check the suggestions, and export your corrections.
-          </p>
-          <button className="doc-button" disabled={!!busy} onClick={onHandwriting}>
-            {busy === "handwriting-sample" ? (
-              <LoaderCircle className="doc-spin" size={17} />
-            ) : (
-              <ArrowRight size={17} />
-            )}
-            Open handwriting sample
-          </button>
-          <p className="doc-sample-note">
-            Real human ink on an assembled page. No prefilled readings.
-          </p>
-          <button className="doc-text-link" disabled={!!busy} onClick={onExample}>
-            Review the prepared merge example <ArrowRight size={14} />
-          </button>
-        </section>
-      </div>
+      <section
+        className={`doc-library-upload ${dragging ? "is-dragging" : ""}`}
+        aria-labelledby="new-review-heading"
+        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault(); setDragging(false);
+          const file = event.dataTransfer.files[0];
+          if (file && !busy) onUpload(file);
+        }}
+      >
+        <FileText size={28} strokeWidth={1.5} />
+        <div>
+          <h2 id="new-review-heading">Start a document review</h2>
+          <p>{dragging ? "Drop your Word file here" : "Open the Word draft you want to mark up on paper."}</p>
+        </div>
+        <button className="doc-button primary" disabled={!!busy} onClick={() => input.current?.click()}>
+          <Plus size={17} /> Open Word file
+        </button>
+        <input ref={input} type="file" accept=".docx" hidden onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onUpload(file);
+          event.target.value = "";
+        }} />
+      </section>
       <RecentDocumentReviews busy={!!busy} />
       <footer className="doc-library-footer">
-        <span>Handwriting suggestions always need your review.</span>
-        <button className="doc-text-link" disabled={!!busy} onClick={onTrial}>
-          <PenLine size={15} /> Try a real-pen check <ArrowRight size={14} />
-        </button>
+        <span>Need a document to try?</span>
+        <button className="doc-text-link" disabled={!!busy} onClick={onHandwriting}>Open sample document <ArrowRight size={14} /></button>
+        <details className="doc-library-examples">
+          <summary>More examples</summary>
+          <button className="doc-text-link" disabled={!!busy} onClick={onExample}>Review conflicting edits</button>
+          <button className="doc-text-link" disabled={!!busy} onClick={onTrial}>Check your own handwriting</button>
+        </details>
       </footer>
     </main>
   );
@@ -273,10 +217,12 @@ function CaptureReport({ scan }: { scan: DocumentScan }) {
   const report = scan.captureReport;
   if (!report) return null;
   return (
-    <section
+    <details
       className="doc-capture-report"
       aria-label="First-pass capture results"
     >
+      <summary>Recognition details <span>{report.expectedCount} intended edits · original readings</span></summary>
+      <div className="doc-capture-report-body">
       <div className="doc-capture-report-heading">
         <span className="doc-eyebrow">FIRST PASS · BEFORE REVIEW</span>
         <span>
@@ -378,7 +324,8 @@ function CaptureReport({ scan }: { scan: DocumentScan }) {
           not a general accuracy estimate.
         </p>
       </details>
-    </section>
+      </div>
+    </details>
   );
 }
 
@@ -464,7 +411,7 @@ function ProofViewer({
             value={source}
             onChange={(event) => setSource(event.target.value)}
           >
-            {session.sample && <option value="sample">Handwriting sample · before recognition</option>}
+            {session.sample && <option value="sample">Marked page · before recognition</option>}
             {session.pages.map((item) => (
               <option key={item.number} value={`page:${item.number}`}>
                 Printed copy · page {item.number}
@@ -472,8 +419,7 @@ function ProofViewer({
             ))}
             {session.scans.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.reviewer} · page {item.page}
-                {item.source === "demo" ? " · prepared example" : item.source === "sample" ? " · handwriting sample" : ""}
+                {item.filename} · page {item.page}
               </option>
             ))}
           </select>
@@ -1130,6 +1076,7 @@ function EditInspector({
             >
               Discard reading edit
             </button>
+            <button type="button" className="doc-text-link" disabled={busy || missingReading} onClick={confirm}>Save reading only</button>
           </div>
         )}
         {!edit.decision && edit.status === "overlap" && (
@@ -1153,16 +1100,6 @@ function EditInspector({
         </details>
       </div>
       <div className="doc-decision-footer">
-        {!edit.decision && !confirmed && (
-          <button
-            className="doc-button doc-confirm"
-            disabled={busy || missingReading}
-            onClick={confirm}
-          >
-            <Check size={16} />
-            {changed ? "Save & confirm reading" : "This reading is correct"}
-          </button>
-        )}
         {edit.decision ? (
           <div className="doc-decision-saved">
             {edit.decision === "paper" &&
@@ -1210,7 +1147,7 @@ function EditInspector({
               }
             >
               <PenLine size={16} />
-              {confirmed ? "Use paper edit" : "Confirm & use edit"}
+              Use this edit
             </button>
             <button
               className="doc-button"
@@ -1955,15 +1892,16 @@ export default function DocumentApp() {
     return false;
   };
   const changeStage = (value: Stage) => {
-    if (value !== stage && !canLeaveReading()) return;
+    if (value === stage || !canLeaveReading()) return;
     if (session?.sample && value === "prepare") {
       setSource("sample");
       setSelectedId(null);
-    } else if (session?.sample && value === "review" && source === "sample") {
-      const scan = session.scans.find((item) => item.source === "sample");
-      const edit = session.edits.find((item) => item.scanId === scan?.id && !item.decision)
-        ?? session.edits.find((item) => item.scanId === scan?.id);
+    } else if (session && value === "review" && !session.scans.some((item) => item.id === source)) {
+      const scan = session.scans.find((item) => !item.reviewed) ?? session.scans[0];
+      const edit = session.edits.find((item) => item.scanId === (scan?.id ?? null) && !item.decision)
+        ?? session.edits.find((item) => item.scanId === (scan?.id ?? null));
       if (scan) setSource(scan.id);
+      else if (edit) setSource(`page:${edit.page ?? 1}`);
       setSelectedId(edit?.id ?? null);
     }
     setStage(value);
@@ -2137,8 +2075,8 @@ export default function DocumentApp() {
       const response = await fetch(inputUrl);
       if (!response.ok) throw new Error("The handwriting sample could not be loaded. Try again.");
       const form = new FormData();
-      form.append("file", await response.blob(), "human-handwriting-sample.png");
-      form.append("reviewer", "Handwriting sample");
+      form.append("file", await response.blob(), "marked-page-01.png");
+      form.append("reviewer", reviewer.trim() || "Reviewer");
       form.append("captureKind", "synthetic");
       return documentRequest(`/api/documents/${session.id}/scans`, { method: "POST", body: form });
     }, (value) => {
@@ -2147,7 +2085,7 @@ export default function DocumentApp() {
       setSource(scan?.id ?? "sample");
       setSelectedId(edit?.id ?? null);
       setStage("review");
-      setNotice("Recognition finished. These are the reader’s unedited suggestions. Compare each one with the ink before accepting it.");
+      setNotice(`${value.edits.filter((item) => item.scanId === scan?.id).length} corrections found. Check each reading against the marked page.`);
     });
   };
 
@@ -2255,7 +2193,7 @@ export default function DocumentApp() {
         {session && (
           <nav className="doc-stage-nav" aria-label="Document workflow">
             {([
-              ["prepare", "Print"],
+              ["prepare", "Files"],
               ["review", "Review"],
               ["export", "Export"],
             ] as const).map(([value, label]) => (
@@ -2265,7 +2203,7 @@ export default function DocumentApp() {
                 className={stage === value ? "active" : ""}
                 onClick={() => changeStage(value)}
               >
-                {value === "prepare" && session.sample ? "Input" : label}
+                {label}
                 {value === "review" && pendingCount > 0 && <b>{pendingCount}</b>}
               </button>
             ))}
@@ -2362,7 +2300,7 @@ export default function DocumentApp() {
                 </details>
               )}
               {session.sample && <details className="doc-session-example">
-                <summary>Human ink · composite page <ChevronDown size={13} /></summary>
+                <summary>Sample document <ChevronDown size={13} /></summary>
                 <div className="doc-note-content"><HandwritingSource sample={session.sample} /></div>
               </details>}
               {session.warnings.length > 0 && (
@@ -2373,16 +2311,12 @@ export default function DocumentApp() {
                   </div>
                 </details>
               )}
-              <span className="doc-toolbar-status">{session.sample && !session.scans.length ? session.pendingCaptures ? "Reading handwriting…" : "Ready to read" : pendingCount ? `${pendingCount} corrections to review` : `${session.edits.length} corrections reviewed`}</span>
+              <span className="doc-toolbar-status">{!session.scans.length && !session.edits.length ? session.pendingCaptures ? "Reading marked page…" : session.sample ? "Marked page ready" : "Waiting for a marked page" : pendingCount ? `${pendingCount} corrections to review` : `${session.edits.length} corrections reviewed`}</span>
             </div>
             {stage === "review" && (
               <div className="doc-review-heading-actions">
-                <label>
-                  <span>Reviewer</span>
-                  <input aria-label="Reviewer for next photo" placeholder="Name" value={reviewer} onChange={(event) => setReviewer(event.target.value)} maxLength={80} />
-                </label>
                 <button className="doc-button compact" disabled={!!busy || (!!session.trial && session.scans.length > 0)} onClick={() => photoInput.current?.click()}>
-                  <ImagePlus size={16} /> Add photo
+                  <ImagePlus size={16} /> Add marked page
                 </button>
                 <button className="doc-button compact" disabled={!!busy || !session.paragraphs.some((paragraph) => paragraph.editable)} onClick={() => openManual()}>
                   <Plus size={16} /> Add correction
@@ -2460,33 +2394,47 @@ export default function DocumentApp() {
           )}
           {stage === "prepare" && (
             <div className="doc-prepare-layout">
-              <section className="doc-prepare-copy">
-                {session.sample ? <>
-                  <h2 className="doc-prepare-title">Try the handwriting reader</h2>
-                  <p className="doc-section-intro">{session.scans.some((scan) => scan.source === "sample")
-                    ? "Recognition is saved. This is the original input image; open the results to compare the reader’s suggestions with the ink."
-                    : session.pendingCaptures ? "The reader is processing this image. You can leave this page and return to the saved results."
-                    : "The page has four handwritten replacements. No readings have been filled in. Run recognition to see what the app makes of them."}</p>
-                  <button className="doc-button primary" disabled={!!busy || session.pendingCaptures > 0} onClick={readHandwritingSample}>
-                    <PenLine size={18} /> {session.scans.some((scan) => scan.source === "sample") ? "Open reading results" : session.pendingCaptures ? "Reading handwriting…" : "Read handwriting"}
-                  </button>
-                  <p className="doc-sample-note">Runs locally. The first reading may take a minute while the model loads.</p>
-                  <HandwritingSource sample={session.sample} />
-                  <a className="doc-text-link" href={session.sample.inputUrl} download>Download the exact input image <ArrowDownToLine size={15} /></a>
-                </> : <>
-                <h2 className="doc-prepare-title">{session.trial ? "Test your handwriting" : "Print review copy"}</h2>
-                <p className="doc-section-intro">
-                  Mark this copy with a red or blue pen. Your original Word
-                  file stays intact.
-                </p>
-                <a
-                  className="doc-button primary"
-                  href={session.printUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Printer size={18} /> Open printable PDF
-                </a>
+              <section className="doc-prepare-copy doc-files-panel" aria-label="Review files">
+                <h2 className="doc-prepare-title">Review files</h2>
+                <div className="doc-file-section">
+                  <h3>Original draft</h3>
+                  <a className="doc-review-file" href={session.baselineUrl} download>
+                    <FileText size={24} strokeWidth={1.5} />
+                    <span><strong>{session.filename}</strong><small>{session.pages.length} review page{session.pages.length === 1 ? "" : "s"}</small></span>
+                    <ArrowDownToLine size={15} />
+                  </a>
+                  <a className="doc-button compact" href={session.printUrl} target="_blank" rel="noreferrer"><Printer size={16} /> Print review copy</a>
+                </div>
+                <div className="doc-file-section">
+                  <h3>Marked pages</h3>
+                  {session.sample && !session.scans.some((scan) => scan.source === "sample") && <button className="doc-review-file" onClick={() => selectSource("sample")}>
+                    <img src={session.sample.inputUrl} alt="Marked review page" />
+                    <span><strong>marked-page-01.png</strong><small>{session.pendingCaptures ? "Reading corrections…" : "Ready to read"}</small></span>
+                  </button>}
+                  {session.scans.map((scan) => <button className="doc-review-file" key={scan.id} onClick={() => selectSource(scan.id)}>
+                    <img src={scan.alignedUrl} alt={`Marked page ${scan.page}`} />
+                    <span><strong>{scan.filename}</strong><small>Page {scan.page} · {session.edits.filter((edit) => edit.scanId === scan.id).length} corrections</small></span>
+                    {scan.reviewed && <Check size={15} />}
+                  </button>)}
+                  {!session.sample && !session.scans.length && <p className="doc-file-hint">Add a photo after marking the review copy.</p>}
+                  <label className="doc-reviewer-input">Reviewer <span>optional</span><input placeholder="Name" value={reviewer} onChange={(event) => setReviewer(event.target.value)} maxLength={80} /></label>
+                  {session.sample && !session.scans.some((scan) => scan.source === "sample") ? <button className="doc-button primary" disabled={!!busy || session.pendingCaptures > 0} onClick={readHandwritingSample}>
+                    {session.pendingCaptures ? <LoaderCircle className="doc-spin" size={16} /> : <ArrowRight size={16} />}{session.pendingCaptures ? "Reading corrections…" : "Find corrections"}
+                  </button> : session.scans.length > 0 ? <button className="doc-button primary" disabled={!!busy} onClick={() => changeStage("review")}>Review corrections <ArrowRight size={16} /></button> : null}
+                  <button className={`doc-button ${session.sample || session.scans.length ? "compact" : "primary"}`} disabled={!!busy || (!!session.trial && session.scans.length > 0)} onClick={() => photoInput.current?.click()}><ImagePlus size={16} /> Add marked page</button>
+                  {session.sample && <div className="doc-sample-source-note"><p className="doc-file-hint">Sample page assembled with real handwriting.</p><details className="doc-file-help"><summary>About this sample</summary><HandwritingSource sample={session.sample} /><a href={session.sample.inputUrl} download>Download marked page</a></details></div>}
+                  <details className="doc-file-help">
+                    <summary>How to mark the page</summary>
+                    <p>Use a red or blue pen. Cross out the text to change and write the replacement directly above it.</p>
+                    <p>Photograph the whole page with all four corner markers visible. JPG, PNG or WebP, up to 20 MB.</p>
+                  </details>
+                </div>
+                <details className="doc-file-section doc-latest-file">
+                  <summary>Latest draft <span>optional</span></summary>
+                  <p className="doc-file-hint">If you kept editing after printing, apply the paper corrections to that version.</p>
+                  <a className="doc-review-file" href={session.currentUrl} download><FileText size={22} /><span><strong>{session.currentFilename}</strong><small>Word file used for export</small></span></a>
+                  <button className="doc-button compact" disabled={!!busy} onClick={() => currentInput.current?.click()}><Upload size={15} /> Choose latest draft</button>
+                </details>
                 {session.trial && (
                   <div className="doc-trial-instructions">
                     <span className="doc-eyebrow">
@@ -2519,66 +2467,6 @@ export default function DocumentApp() {
                     </p>
                   </div>
                 )}
-                <ol className="doc-instructions">
-                  <li>
-                    <b>Cross out words to remove them.</b>
-                    <p>
-                      Make a clear line through the text you want to change.
-                    </p>
-                  </li>
-                  <li>
-                    <b>Write the replacement directly above.</b>
-                    <p>
-                      Keep it on one line, just above the crossed-out words.
-                      You’ll confirm every reading.
-                    </p>
-                  </li>
-                  <li>
-                    <b>Photograph the whole page.</b>
-                    <p>
-                      Keep the four corner markers and QR code visible, in focus
-                      and without glare.
-                    </p>
-                  </li>
-                </ol>
-                <div className="doc-upload-block">
-                  <label>
-                    Whose edits are these?
-                    <input
-                      value={reviewer}
-                      onChange={(event) => setReviewer(event.target.value)}
-                      maxLength={80}
-                    />
-                  </label>
-                  <button
-                    className="doc-button"
-                    disabled={
-                      !!busy || (!!session.trial && session.scans.length > 0)
-                    }
-                    onClick={() => photoInput.current?.click()}
-                  >
-                    <ImagePlus size={17} /> Add a marked page
-                  </button>
-                  <p className="doc-fine-print">
-                    JPG, PNG or WebP · one page per photo · up to 20 MB and 25
-                    megapixels
-                  </p>
-
-                </div>
-                <div className="doc-latest-note">
-                  <span className="doc-eyebrow">Have a newer Word file?</span>
-                  <p>
-                    Use it as the base for your reviewed corrections.
-                  </p>
-                  <button
-                    className="doc-text-link"
-                    disabled={!!busy}
-                    onClick={() => currentInput.current?.click()}
-                  >
-                    Choose latest draft <ArrowRight size={14} />
-                  </button>
-                </div>
-                </>}
               </section>
               <ProofViewer
                 session={session}
