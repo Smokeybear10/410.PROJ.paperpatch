@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "./";
+@source "../index.html";
 @font-face {
   font-family: "IBM Plex Sans";
   font-style: normal;
