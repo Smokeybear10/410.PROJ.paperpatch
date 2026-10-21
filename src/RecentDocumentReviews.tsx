@@ -12,7 +12,7 @@ const reviewsSchema = z.array(z.object({
   pendingCount: z.number().int().nonnegative(),
   pendingCaptures: z.number().int().nonnegative().default(0),
   scanCount: z.number().int().nonnegative(),
-  kind: z.enum(["document", "example", "trial"]),
+  kind: z.enum(["document", "example", "trial", "handwriting"]),
   exported: z.boolean(),
 }));
 
@@ -94,7 +94,7 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
                 <span className="doc-recent-file">
                   <strong title={review.currentFilename}>{review.currentFilename}</strong>
                   <span>
-                    {review.kind === "example" ? "Working example" : review.kind === "trial" ? "Pen check" : "Word document"}
+                    {review.kind === "example" ? "Prepared example" : review.kind === "trial" ? "Pen check" : review.kind === "handwriting" ? "Handwriting sample" : "Word document"}
                     <span aria-hidden="true"> · </span>
                     <time dateTime={review.updatedAt}>{updatedDate.format(new Date(review.updatedAt))}</time>
                   </span>

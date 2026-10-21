@@ -140,11 +140,13 @@ function SourceBadge({ edit }: { edit: DocumentEdit }) {
 function Landing({
   busy,
   onExample,
+  onHandwriting,
   onTrial,
   onUpload,
 }: {
   busy: string | null;
   onExample: () => void;
+  onHandwriting: () => void;
   onTrial: () => void;
   onUpload: (file: File) => void;
 }) {
@@ -221,43 +223,28 @@ function Landing({
           className="doc-example-review"
           aria-labelledby="example-review-heading"
         >
-          <div className="doc-section-number">Sample document</div>
+          <div className="doc-section-number">Handwriting sample</div>
           <div className="doc-example-title">
-            <h2 id="example-review-heading">Review an example</h2>
-            <span className="doc-sample-tag">Example</span>
+            <h2 id="example-review-heading">Read actual handwriting</h2>
           </div>
           <p>
-            Compare two reviewers’ paper edits with a Word draft that changed
-            after printing.
+            Try four handwritten words from a photographed notebook, placed on
+            a review page. Read the image, check the suggestions, and export your corrections.
           </p>
-          <div
-            className="doc-sample-comparison"
-            aria-label="Example conflict: printed 24, latest Word 30, paper correction 18"
-          >
-            <div>
-              <span>Printed</span>
-              <b>24</b>
-            </div>
-            <div>
-              <span>Latest Word</span>
-              <b>30</b>
-            </div>
-            <div>
-              <span>On paper</span>
-              <b>18</b>
-            </div>
-          </div>
-          <button className="doc-button" disabled={!!busy} onClick={onExample}>
-            {busy === "example" ? (
+          <button className="doc-button" disabled={!!busy} onClick={onHandwriting}>
+            {busy === "handwriting-sample" ? (
               <LoaderCircle className="doc-spin" size={17} />
             ) : (
               <ArrowRight size={17} />
             )}
-            Open working example
+            Open handwriting sample
           </button>
           <p className="doc-sample-note">
-            Prepared readings. No printer needed.
+            Real human ink on an assembled page. No prefilled readings.
           </p>
+          <button className="doc-text-link" disabled={!!busy} onClick={onExample}>
+            Review the prepared merge example <ArrowRight size={14} />
+          </button>
         </section>
       </div>
       <RecentDocumentReviews busy={!!busy} />
@@ -269,6 +256,17 @@ function Landing({
       </footer>
     </main>
   );
+}
+
+function HandwritingSource({ sample }: { sample: NonNullable<DocumentSession["sample"]> }) {
+  return <div className="doc-handwriting-source">
+    <p>{sample.description}</p>
+    <p><a href={sample.originalUrl} target="_blank" rel="noreferrer">View original handwriting photograph</a></p>
+    <p>{sample.attribution} <a href={sample.sourceUrl} target="_blank" rel="noreferrer">Source</a>
+      {" · "}<a href={sample.licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a>
+      {sample.provenanceUrl && <> · <a href={sample.provenanceUrl} target="_blank" rel="noreferrer">Sample provenance</a></>}
+    </p>
+  </div>;
 }
 
 function CaptureReport({ scan }: { scan: DocumentScan }) {
@@ -285,10 +283,11 @@ function CaptureReport({ scan }: { scan: DocumentScan }) {
           {report.source === "physical_reported"
             ? "Physical pen · reported by uploader"
             : report.source === "synthetic"
-              ? "Synthetic image"
+              ? "Composite test image"
               : "Physical source not confirmed"}
         </span>
       </div>
+      {scan.recognizer && <p>{typeof scan.recognizer === "string" ? scan.recognizer : scan.recognizer.model.split("/").at(-1)?.replace("_rec_onnx", "")}{scan.captureSeconds !== undefined ? ` · ${scan.captureSeconds.toFixed(1)} seconds` : ""}. Read from the uploaded image.</p>}
       <div className="doc-capture-counts">
         <span>
           <b>
@@ -414,6 +413,7 @@ function ProofViewer({
   const [linkedEditId, setLinkedEditId] = useState("");
   const proofScroll = useRef<HTMLDivElement>(null);
   const scan = session.scans.find((item) => item.id === source);
+  const showingSample = source === "sample" && !!session.sample;
   useEffect(() => {
     setLinkingMarkId(null);
     setLinkedEditId("");
@@ -464,6 +464,7 @@ function ProofViewer({
             value={source}
             onChange={(event) => setSource(event.target.value)}
           >
+            {session.sample && <option value="sample">Handwriting sample · before recognition</option>}
             {session.pages.map((item) => (
               <option key={item.number} value={`page:${item.number}`}>
                 Printed copy · page {item.number}
@@ -472,7 +473,7 @@ function ProofViewer({
             {session.scans.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.reviewer} · page {item.page}
-                {item.source === "demo" ? " · example" : ""}
+                {item.source === "demo" ? " · prepared example" : item.source === "sample" ? " · handwriting sample" : ""}
               </option>
             ))}
           </select>
@@ -523,9 +524,9 @@ function ProofViewer({
             }}
           >
             <img
-              src={scan?.alignedUrl ?? page.previewUrl}
+              src={showingSample ? session.sample?.inputUrl : scan?.alignedUrl ?? page.previewUrl}
               alt={
-                scan
+                showingSample ? "Human handwriting composited on a review page, before recognition" : scan
                   ? `${scan.reviewer}’s marked review page ${scan.page}`
                   : `Printable review page ${page.number}`
               }
@@ -1954,7 +1955,18 @@ export default function DocumentApp() {
     return false;
   };
   const changeStage = (value: Stage) => {
-    if (value === stage || canLeaveReading()) setStage(value);
+    if (value !== stage && !canLeaveReading()) return;
+    if (session?.sample && value === "prepare") {
+      setSource("sample");
+      setSelectedId(null);
+    } else if (session?.sample && value === "review" && source === "sample") {
+      const scan = session.scans.find((item) => item.source === "sample");
+      const edit = session.edits.find((item) => item.scanId === scan?.id && !item.decision)
+        ?? session.edits.find((item) => item.scanId === scan?.id);
+      if (scan) setSource(scan.id);
+      setSelectedId(edit?.id ?? null);
+    }
+    setStage(value);
   };
 
   useEffect(() => {
@@ -1972,7 +1984,7 @@ export default function DocumentApp() {
           setStage(value.export ? "export" : value.edits.length || value.scans.length ? "review" : "prepare");
           const edit = value.edits.find((item) => !item.decision) ?? value.edits[0];
           setSelectedId(edit?.id ?? null);
-          setSource(edit?.scanId ?? value.scans.at(-1)?.id ?? "page:1");
+          setSource(edit?.scanId ?? value.scans.at(-1)?.id ?? (value.sample ? "sample" : "page:1"));
         })
         .catch((cause) => {
           if (mounted.current && version === requestVersion.current) setError(documentError(cause));
@@ -2031,22 +2043,22 @@ export default function DocumentApp() {
       }
     }
   };
-  const start = async (file?: File, trial = false) => {
+  const start = async (file?: File, kind: "example" | "trial" | "handwriting-sample" = "example") => {
     if (!canLeaveReading()) return;
     const form = new FormData();
     if (file) form.append("file", file);
-    await perform(file ? "upload" : trial ? "trial" : "example", () => documentRequest(
-      file ? "/api/documents" : trial ? "/api/documents/trial" : "/api/documents/example",
+    await perform(file ? "upload" : kind, () => documentRequest(
+      file ? "/api/documents" : `/api/documents/${kind}`,
       { method: "POST", ...(file ? { body: form } : {}) },
     ), (value) => {
-      setStage(file || trial ? "prepare" : "review");
+      setStage(file || kind !== "example" ? "prepare" : "review");
       setPhysicalCapture(false);
       setFilter("all");
       setManual(false);
       setManualMarkId(null);
       const edit = value.edits[0];
       setSelectedId(edit?.id ?? null);
-      setSource(edit?.scanId ?? "page:1");
+      setSource(edit?.scanId ?? (value.sample ? "sample" : "page:1"));
     });
   };
   const reloadReview = async () => {
@@ -2056,7 +2068,7 @@ export default function DocumentApp() {
         const edit = value.edits.find((item) => !item.decision) ?? value.edits[0];
         setSelectedId(edit?.id ?? null);
       }
-      if (!source.startsWith("page:") && !value.scans.some((scan) => scan.id === source)) setSource("page:1");
+      if (!source.startsWith("page:") && !(source === "sample" && value.sample) && !value.scans.some((scan) => scan.id === source)) setSource("page:1");
       setNotice("Latest review loaded. Your reading drafts are retained; check the updated passages before saving.");
     });
   };
@@ -2107,6 +2119,35 @@ export default function DocumentApp() {
         : marks
           ? `${marks} pen-mark ${marks === 1 ? "region needs" : "regions need"} your reading. Enter the intended correction, or mark an annotation as not changing the text.`
           : "No corrections were detected on this photo. Inspect the source and enter missed marks manually, or try a clearer photograph.");
+    });
+  };
+  const readHandwritingSample = async () => {
+    if (!session?.sample || !canLeaveReading()) return;
+    const existing = session.scans.find((scan) => scan.source === "sample");
+    if (existing) {
+      setSource(existing.id);
+      setSelectedId(session.edits.find((edit) => edit.scanId === existing.id && !edit.decision)?.id
+        ?? session.edits.find((edit) => edit.scanId === existing.id)?.id ?? null);
+      setStage("review");
+      return;
+    }
+    if (session.pendingCaptures) return;
+    const inputUrl = session.sample.inputUrl;
+    await perform("photo", async () => {
+      const response = await fetch(inputUrl);
+      if (!response.ok) throw new Error("The handwriting sample could not be loaded. Try again.");
+      const form = new FormData();
+      form.append("file", await response.blob(), "human-handwriting-sample.png");
+      form.append("reviewer", "Handwriting sample");
+      form.append("captureKind", "synthetic");
+      return documentRequest(`/api/documents/${session.id}/scans`, { method: "POST", body: form });
+    }, (value) => {
+      const scan = value.scans.at(-1);
+      const edit = value.edits.find((item) => item.scanId === scan?.id);
+      setSource(scan?.id ?? "sample");
+      setSelectedId(edit?.id ?? null);
+      setStage("review");
+      setNotice("Recognition finished. These are the reader’s unedited suggestions. Compare each one with the ink before accepting it.");
     });
   };
 
@@ -2224,7 +2265,7 @@ export default function DocumentApp() {
                 className={stage === value ? "active" : ""}
                 onClick={() => changeStage(value)}
               >
-                {label}
+                {value === "prepare" && session.sample ? "Input" : label}
                 {value === "review" && pendingCount > 0 && <b>{pendingCount}</b>}
               </button>
             ))}
@@ -2292,6 +2333,8 @@ export default function DocumentApp() {
                     ? "Preparing your print copy…"
                     : busy === "example"
                       ? "Preparing the working example…"
+                      : busy === "handwriting-sample"
+                        ? "Preparing the handwriting image. Recognition has not run yet…"
                       : busy === "trial"
                         ? "Preparing a clean page for your real-pen check…"
                         : "Saving your review…"}
@@ -2301,7 +2344,8 @@ export default function DocumentApp() {
         <Landing
           busy={busy}
           onExample={() => start()}
-          onTrial={() => start(undefined, true)}
+          onHandwriting={() => start(undefined, "handwriting-sample")}
+          onTrial={() => start(undefined, "trial")}
           onUpload={(file) => start(file)}
         />
       ) : (
@@ -2317,6 +2361,10 @@ export default function DocumentApp() {
                   </div>
                 </details>
               )}
+              {session.sample && <details className="doc-session-example">
+                <summary>Human ink · composite page <ChevronDown size={13} /></summary>
+                <div className="doc-note-content"><HandwritingSource sample={session.sample} /></div>
+              </details>}
               {session.warnings.length > 0 && (
                 <details className="doc-session-warnings">
                   <summary><CircleAlert size={14} /> {session.warnings.length} document note{session.warnings.length === 1 ? "" : "s"}</summary>
@@ -2325,7 +2373,7 @@ export default function DocumentApp() {
                   </div>
                 </details>
               )}
-              <span className="doc-toolbar-status">{pendingCount ? `${pendingCount} corrections to review` : `${session.edits.length} corrections reviewed`}</span>
+              <span className="doc-toolbar-status">{session.sample && !session.scans.length ? session.pendingCaptures ? "Reading handwriting…" : "Ready to read" : pendingCount ? `${pendingCount} corrections to review` : `${session.edits.length} corrections reviewed`}</span>
             </div>
             {stage === "review" && (
               <div className="doc-review-heading-actions">
@@ -2383,7 +2431,7 @@ export default function DocumentApp() {
                 <button
                   className="doc-button compact"
                   disabled={!!busy}
-                  onClick={() => start(undefined, true)}
+                  onClick={() => start(undefined, "trial")}
                 >
                   <RotateCcw size={15} /> Start a fresh check
                 </button>
@@ -2413,6 +2461,19 @@ export default function DocumentApp() {
           {stage === "prepare" && (
             <div className="doc-prepare-layout">
               <section className="doc-prepare-copy">
+                {session.sample ? <>
+                  <h2 className="doc-prepare-title">Try the handwriting reader</h2>
+                  <p className="doc-section-intro">{session.scans.some((scan) => scan.source === "sample")
+                    ? "Recognition is saved. This is the original input image; open the results to compare the reader’s suggestions with the ink."
+                    : session.pendingCaptures ? "The reader is processing this image. You can leave this page and return to the saved results."
+                    : "The page has four handwritten replacements. No readings have been filled in. Run recognition to see what the app makes of them."}</p>
+                  <button className="doc-button primary" disabled={!!busy || session.pendingCaptures > 0} onClick={readHandwritingSample}>
+                    <PenLine size={18} /> {session.scans.some((scan) => scan.source === "sample") ? "Open reading results" : session.pendingCaptures ? "Reading handwriting…" : "Read handwriting"}
+                  </button>
+                  <p className="doc-sample-note">Runs locally. The first reading may take a minute while the model loads.</p>
+                  <HandwritingSource sample={session.sample} />
+                  <a className="doc-text-link" href={session.sample.inputUrl} download>Download the exact input image <ArrowDownToLine size={15} /></a>
+                </> : <>
                 <h2 className="doc-prepare-title">{session.trial ? "Test your handwriting" : "Print review copy"}</h2>
                 <p className="doc-section-intro">
                   Mark this copy with a red or blue pen. Your original Word
@@ -2517,6 +2578,7 @@ export default function DocumentApp() {
                     Choose latest draft <ArrowRight size={14} />
                   </button>
                 </div>
+                </>}
               </section>
               <ProofViewer
                 session={session}
@@ -2674,7 +2736,7 @@ export default function DocumentApp() {
                       disabled={!!busy}
                       onClick={() =>
                         activeScan && session.trial
-                          ? start(undefined, true)
+                          ? start(undefined, "trial")
                           : activeScan
                             ? photoInput.current?.click()
                             : changeStage("prepare")

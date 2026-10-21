@@ -336,7 +336,7 @@ def recent_documents(before: str | None = Query(default=None, pattern=r'^\d{1,20
                 cursor=f'{modified}:{session["id"]}',
                 editCount=len(edits), pendingCount=unresolved + sum(not scan['reviewed'] for scan in scans) + pending,
                 scanCount=len(scans), pendingCaptures=pending,
-                kind='trial' if session.get('trial') else 'example' if session.get('demo') else 'document',
+                kind='trial' if session.get('trial') else 'handwriting' if session.get('sample') else 'example' if session.get('demo') else 'document',
                 exported=isinstance(session.get('export'), dict) and not pending,
             ))
             if len(summaries) == 20:
@@ -354,6 +354,12 @@ def upload_document(file: UploadFile) -> dict:
 def example_document() -> dict:
     from backend.document_example import create_example
     return create_example()
+
+
+@router.post('/handwriting-sample')
+def handwriting_sample() -> dict:
+    from backend.document_sample import create_handwriting_sample
+    return create_handwriting_sample()
 
 
 @router.post('/trial')
@@ -458,6 +464,8 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
         digest = sha256(data).hexdigest()
         with LOCK:
             session = load(sid)
+            bundled_sample = bool(session.get('sample') and session.get('_sampleInputHash') == digest)
+            capture_kind = 'synthetic' if bundled_sample else captureKind
             if session.get('trial') and session['scans']:
                 raise ValueError('This capture check already has a result. Start a new real-pen check for a separate attempt.')
             if len(session['scans']) >= 24:
@@ -479,11 +487,11 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
         except ValueError as error:
             with LOCK:
                 session = load(sid)
-                if session.get('trial'):
+                if session.get('trial') or bundled_sample:
                     session.setdefault('_captureFailures', []).append(dict(
                         filename=safe_name(file), sha256=digest, createdAt=now(),
                         uploadUrl=file_url(sid, f'scans/{scan_id}/{upload_name}'),
-                        source='physical_reported' if captureKind == 'physical' else captureKind,
+                        source='physical_reported' if capture_kind == 'physical' else capture_kind,
                         error=str(error)))
                     save(session)
             raise
@@ -502,12 +510,17 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
                         originalUrl=file_url(sid, prefix + result['originalPath']), reviewed=False,
                         uploadUrl=file_url(sid, prefix + upload_name), captureSeconds=elapsed,
                         recognizer=result['recognizer'],
-                        warnings=result['warnings'], source='photo', markCount=len(result.get('marks', [])),
+                        warnings=result['warnings'], source='sample' if bundled_sample else 'photo', markCount=len(result.get('marks', [])),
                         marks=[{**mark, 'cropUrl': file_url(sid, prefix + mark['cropPath']),
                                 'resolution': None, 'editId': None}
                                for mark in result.get('marks', [])], _hash=digest)
-            if session.get('trial'):
-                scan['captureReport'] = capture_report(session['_trialExpected'], result['edits'], captureKind)
+            if session.get('trial') or bundled_sample:
+                expected = session['_sampleExpected'] if bundled_sample else session['_trialExpected']
+                scan['captureReport'] = capture_report(expected, result['edits'], capture_kind)
+                if bundled_sample:
+                    scan['captureReport']['scope'] = ('One local capture of an assembled test page containing real human handwriting. '
+                        'Exact spans and case-sensitive initial readings; manual repairs do not change these counts. '
+                        'The page and strike-throughs are generated. This is not a physical print-and-phone test or an accuracy benchmark.')
                 scan['captureReport']['failedAttemptsBeforeThis'] = len(session.get('_captureFailures', []))
                 scan['captureReportUrl'] = file_url(sid, prefix + 'capture-report.json')
                 record = dict(version=1, documentId=sid, scanId=scan_id, createdAt=scan['createdAt'],
@@ -515,6 +528,8 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
                               recognizer=result['recognizer'], report=scan['captureReport'],
                               proposals=result['edits'], warnings=result['warnings'],
                               failedCaptures=session.get('_captureFailures', []))
+                if bundled_sample:
+                    record['handwritingSample'] = session['sample']
                 (output / 'capture-report.json').write_text(json.dumps(record, ensure_ascii=False, indent=2))
             for proposal in result['edits']:
                 edit = create_edit(session, proposal['paragraphId'], proposal['start'], proposal['end'],
@@ -717,6 +732,9 @@ def export_document(sid: str, body: ExportBody) -> dict:
                      verificationScope='Document structure, intended text changes and unchanged package parts. This does not verify handwriting accuracy or editorial judgment.')
         if session.get('trial'):
             audit['captureCheck'] = session['trial']
+        if session.get('sample'):
+            audit['handwritingSample'] = session['sample']
+        if session.get('trial') or session.get('sample'):
             audit['failedCaptures'] = session.get('_captureFailures', [])
         (folder / 'audit.json').write_text(json.dumps(audit, ensure_ascii=False, indent=2))
         session['export'] = record

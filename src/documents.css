@@ -4354,6 +4354,23 @@
   margin: 10px 0 0;
   letter-spacing: -0.5px;
 }
+.doc-app .doc-handwriting-source {
+  margin: 22px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.doc-app .doc-handwriting-source p {
+  margin: 0 0 12px;
+}
+.doc-app .doc-handwriting-source a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.doc-workbench .doc-note-content .doc-handwriting-source {
+  margin: 0;
+}
 .doc-workbench .doc-prepare-copy > .doc-eyebrow {
   color: var(--muted);
   font:

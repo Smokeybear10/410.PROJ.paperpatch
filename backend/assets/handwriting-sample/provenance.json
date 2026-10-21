@@ -1,0 +1,174 @@
+{
+  "version": "paperpatch-gnhk-live-sample-v1",
+  "source": {
+    "dataset": "GNHK",
+    "page": "eng_AF_039.jpg",
+    "url": "https://github.com/GoodNotes/GNHK-dataset",
+    "license": "CC-BY-4.0",
+    "licenseUrl": "https://github.com/GoodNotes/GNHK-dataset/blob/main/LICENSE",
+    "attribution": "Alex W. C. Lee, Jonathan Chung, Marco Lee. GNHK: A Dataset for English Handwriting in the Wild. ICDAR 2021.",
+    "path": "original-source.jpg",
+    "sha256": "5d1db7e5e754f0347f4353449c40316f35b971c9ffb5b1794a196477ab35ec72"
+  },
+  "licenseFile": "LICENSE.txt",
+  "licenseSha256": "9e5f1b3c610b9c2da5c313bf81d577a7d1acec686bdb0384edefa6df0f90cd94",
+  "selection": "Use all four words from the first frozen development page in paperpatch-gnhk-v1, in existing manifest order. No OCR predictions were inspected or used to select these four words.",
+  "originalSelection": "For each original train/test split and region AF/AS/EU/NA, sort pages by SHA256(paperpatch-gnhk-v1:filename); take first3. Perpage retain type H, regex [A-Za-z][A-Za-z'-]{2,14}; order by SHA256(paperpatch-gnhk-v1:filename:annotationIndex); take first4. No recognition results used to select pages or words.",
+  "transport": {
+    "mirror": "https://huggingface.co/datasets/radhakrishnadeshpande/gnhk-pagelevel",
+    "revision": "0189a76ad06a7df77f21b1fb6fb1fd12414b00f3",
+    "caveat": "Official dataset page now redirects to the Goodnotes homepage. Images and annotations fetched from public mirror claiming unchanged original annotations. Original unavailable archive was not downloaded for byte-level cross-check."
+  },
+  "transformations": {
+    "sourceCrops": "Byte-identical copies of the frozen polygon-rectified crops; source photograph is copied unchanged. Original crop transform: order author polygon TL/TR/BR/BL, perspective rectify, add white padding max(4 px, 5% crop height).",
+    "ink": "RGB channel excess is R-max(G,B) for red ink or B-max(R,G) for blue ink. Select whichever has the larger 99th percentile. Background is median excess over all crop pixels. Floor is background+6; ceiling is 99th percentile excess. Alpha=clip((excess-floor)/(ceiling-floor),0,1), then set alpha<0.06 to zero. Preserve original RGB pixels. Tight crop to nonzero alpha and add 4 px transparent padding. No morphology, stroke synthesis, drawing, font rendering, letter reconstruction, or OCR-informed operations.",
+    "runtime": "Runtime may resize and recolor these pixel alpha masks and place them above generated text with generated strike-through marks; this must be disclosed as a composite."
+  },
+  "disclaimer": "The handwriting pixels come from a photographed human-written GNHK notebook page. Any review page assembled with them is a composite example, not a photograph of that printed review page. This example is not a representative accuracy benchmark or physical print-pen-phone validation.",
+  "words": [
+    {
+      "id": "eng_AF_039-w016",
+      "text": "determination",
+      "inkPath": "ink/eng_AF_039-w016.png",
+      "cropPath": "source-crops/eng_AF_039-w016.png",
+      "inkSha256": "0ad07dce43e317be71b6c7835ae992afc622fc9149a832894634571145552fda",
+      "cropSha256": "df9961458d7fce63853f2d6e75d6c3ad92ef12bf41e8d360fd023cd802ff5c19",
+      "annotationIndex": 16,
+      "sourcePolygon": {
+        "x0": 3290,
+        "y0": 1120,
+        "x1": 4027,
+        "y1": 1147,
+        "x2": 4027,
+        "y2": 1268,
+        "x3": 3282,
+        "y3": 1274
+      },
+      "sourceInkChannel": "red",
+      "extraction": {
+        "backgroundMedianExcess": 2.0,
+        "excessFloor": 8.0,
+        "excess99thPercentile": 32.0,
+        "sourceCropRect": [
+          8,
+          8,
+          739,
+          154
+        ],
+        "transparentPaddingPx": 4
+      },
+      "inkSize": [
+        747,
+        162
+      ]
+    },
+    {
+      "id": "eng_AF_039-w024",
+      "text": "hidden",
+      "inkPath": "ink/eng_AF_039-w024.png",
+      "cropPath": "source-crops/eng_AF_039-w024.png",
+      "inkSha256": "1b82e93bba02fa030d8b22cf308e70279a292996ce3adaefeab46c8e0360028f",
+      "cropSha256": "cb43c3b43379397512df893da89722b55a3c30c0c31a257d940b31dfb33681c0",
+      "annotationIndex": 24,
+      "sourcePolygon": {
+        "x0": 2325,
+        "y0": 1593,
+        "x1": 2740,
+        "y1": 1638,
+        "x2": 2742,
+        "y2": 1751,
+        "x3": 2338,
+        "y3": 1783
+      },
+      "sourceInkChannel": "blue",
+      "extraction": {
+        "backgroundMedianExcess": 12.0,
+        "excessFloor": 18.0,
+        "excess99thPercentile": 55.0,
+        "sourceCropRect": [
+          14,
+          10,
+          407,
+          190
+        ],
+        "transparentPaddingPx": 4
+      },
+      "inkSize": [
+        415,
+        198
+      ]
+    },
+    {
+      "id": "eng_AF_039-w027",
+      "text": "Failure",
+      "inkPath": "ink/eng_AF_039-w027.png",
+      "cropPath": "source-crops/eng_AF_039-w027.png",
+      "inkSha256": "7db77176f837199f039703c465a1bed04ed492c63d9063d7204f6bf6668c61f9",
+      "cropSha256": "3c13084b9f39ad4a14e62dd0059c4b52b3b38beff26d56c81e7351d8ba4aa010",
+      "annotationIndex": 27,
+      "sourcePolygon": {
+        "x0": 482,
+        "y0": 1926,
+        "x1": 1010,
+        "y1": 1932,
+        "x2": 1010,
+        "y2": 2066,
+        "x3": 490,
+        "y3": 2147
+      },
+      "sourceInkChannel": "blue",
+      "extraction": {
+        "backgroundMedianExcess": 13.0,
+        "excessFloor": 19.0,
+        "excess99thPercentile": 55.0,
+        "sourceCropRect": [
+          11,
+          11,
+          528,
+          218
+        ],
+        "transparentPaddingPx": 4
+      },
+      "inkSize": [
+        536,
+        226
+      ]
+    },
+    {
+      "id": "eng_AF_039-w006",
+      "text": "perfection",
+      "inkPath": "ink/eng_AF_039-w006.png",
+      "cropPath": "source-crops/eng_AF_039-w006.png",
+      "inkSha256": "a2c82e747d08445ba9b9378541c5f1e6a30c3599fa12be1329f3b7698e676e16",
+      "cropSha256": "d7f8c3bd7ea5dcda6748792d9d6138245ee7c0b9b4168cd69e7789e0e4e1dab5",
+      "annotationIndex": 6,
+      "sourcePolygon": {
+        "x0": 1917,
+        "y0": 716,
+        "x1": 2525,
+        "y1": 699,
+        "x2": 2546,
+        "y2": 835,
+        "x3": 1924,
+        "y3": 923
+      },
+      "sourceInkChannel": "red",
+      "extraction": {
+        "backgroundMedianExcess": 0.0,
+        "excessFloor": 6.0,
+        "excess99thPercentile": 54.0,
+        "sourceCropRect": [
+          10,
+          10,
+          627,
+          207
+        ],
+        "transparentPaddingPx": 4
+      },
+      "inkSize": [
+        635,
+        215
+      ]
+    }
+  ]
+}

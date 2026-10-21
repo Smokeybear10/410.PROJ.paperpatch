@@ -18,9 +18,11 @@ const scanSchema = z.object({
   originalUrl: z.string(),
   uploadUrl: z.string().optional(),
   captureReportUrl: z.string().optional(),
+  recognizer: z.union([z.string(), z.object({ model: z.string() })]).optional(),
+  captureSeconds: z.number().nonnegative().optional(),
   reviewed: z.boolean(),
   warnings: z.array(z.string()),
-  source: z.enum(["photo", "demo"]),
+  source: z.enum(["photo", "demo", "sample"]),
   markCount: z.number().int(),
   captureReport: z
     .object({
@@ -127,6 +129,16 @@ export const documentSessionSchema = z.object({
   revision: z.number().int(),
   pendingCaptures: z.number().int().nonnegative().default(0),
   demo: z.boolean(),
+  sample: z.object({
+    kind: z.literal("human_ink_composite"),
+    inputUrl: z.string(),
+    originalUrl: z.string(),
+    sourceUrl: z.string(),
+    licenseUrl: z.string(),
+    attribution: z.string(),
+    description: z.string(),
+    provenanceUrl: z.string().optional(),
+  }).optional(),
   trial: z
     .object({
       kind: z.literal("physical_capture"),
