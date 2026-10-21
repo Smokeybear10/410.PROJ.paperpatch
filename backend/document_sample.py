@@ -6,6 +6,7 @@ import json
 from PIL import Image, ImageDraw
 
 from backend.document_example import example_docx
+from backend.docx_engine import inspect_docx
 
 
 ASSETS = Path(__file__).resolve().parent / 'assets' / 'handwriting-sample'
@@ -25,6 +26,10 @@ PARAGRAPHS = [
      'meeting should end with a manageable plan and a time to check in again. I can '
      'offer consistency, honest answers, and the willingness to keep listening.'),
 ]
+VERSION_CHANGES = [
+    (1, 'confidence', 'commitment'),
+    (4, 'a time to check in again', 'a short follow-up the next week'),
+]
 
 
 def create_handwriting_sample() -> dict:
@@ -42,9 +47,23 @@ def create_handwriting_sample() -> dict:
             raise ValueError('The handwriting sample does not match its recorded source assets.')
 
     with LOCK:
-        session = new_document(example_docx(PARAGRAPHS), 'mentoring-statement-draft.docx')
+        session = new_document(example_docx(PARAGRAPHS), 'mentoring-statement-v1.docx')
         sid = session['id']
         folder = document_dir(sid)
+        baseline_hash = session['currentHash']
+        latest_paragraphs = PARAGRAPHS.copy()
+        version_changes = []
+        for index, before, after in VERSION_CHANGES:
+            style, text = latest_paragraphs[index]
+            latest_paragraphs[index] = (style, text.replace(before, after, 1))
+            version_changes.append(dict(paragraphId=session['paragraphs'][index]['id'],
+                                        before=before, after=after,
+                                        overlapsPaperCorrection=before in TARGETS))
+        latest = example_docx(latest_paragraphs)
+        (folder / 'current.docx').write_bytes(latest)
+        session.update(currentFilename='mentoring-statement-v2.docx',
+                       currentHash=sha256(latest).hexdigest(),
+                       currentParagraphs=inspect_docx(latest)['paragraphs'])
         sample_folder = folder / 'sample'
         sample_folder.mkdir()
         manifest = session['_manifest']
@@ -79,7 +98,12 @@ def create_handwriting_sample() -> dict:
         image.convert('RGB').save(input_path)
         digest = sha256(input_path.read_bytes()).hexdigest()
         copyfile(ASSETS / source['path'], sample_folder / 'original-source.jpg')
-        record = {**provenance, 'assembly': {
+        record = {**provenance, 'draftVersions': {
+            'scenario': 'Fictional sample: version 2 was edited separately from the marked version 1 review copy.',
+            'baselineFilename': session['filename'], 'baselineSha256': baseline_hash,
+            'currentFilename': session['currentFilename'], 'currentSha256': session['currentHash'],
+            'changes': version_changes,
+        }, 'assembly': {
             'description': 'Real human letter shapes placed on a generated review page. The strike-through lines are generated.',
             'letterTransform': 'Uniform resize to 16-point height using Lanczos resampling; original ink hue and alpha retained.',
             'placements': placements, 'inputSha256': digest,
@@ -92,8 +116,9 @@ def create_handwriting_sample() -> dict:
             originalUrl=file_url(sid, 'sample/original-source.jpg'),
             provenanceUrl=file_url(sid, 'sample/provenance.json'),
             sourceUrl=source['url'], licenseUrl=source['licenseUrl'], attribution=source['attribution'],
-            description='A fictional mentoring statement with real human handwriting from a photographed page, '
-                        'placed on this generated review copy. '
+            description='A fictional mentoring statement with a marked version 1 and a separately edited version 2. '
+                        'The newer draft contains one overlapping word change and a separate follow-up detail. '
+                        'Real human handwriting from a photographed page is placed on the version 1 review copy. '
                         'The strike-throughs are generated. This is an assembled test page, not a phone photo of a printed review.',
         )
         session['_sampleExpected'] = expected

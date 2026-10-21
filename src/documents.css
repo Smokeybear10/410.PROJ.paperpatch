@@ -4617,22 +4617,22 @@
     0 7px 18px #1f2d3b09;
 }
 .doc-workbench .doc-preview-paper h3 {
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1.4;
   letter-spacing: -0.4px;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 .doc-workbench .doc-preview-paper p {
-  font-size: 17px;
-  line-height: 1.85;
-  margin: 24px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 14px 0;
 }
 .doc-workbench .doc-preview-paper .doc-preview-subtitle {
   font:
     11px/1.5 "IBM Plex Sans",
     sans-serif;
-  letter-spacing: 1px;
-  margin: 0 0 34px;
+  letter-spacing: 0;
+  margin: 0 0 22px;
 }
 .doc-workbench .doc-preview-paper del {
   background: #fbebea;
@@ -4822,7 +4822,7 @@
     min-height: 760px;
   }
   .doc-workbench .doc-preview-paper p {
-    font-size: 16px;
+    font-size: 14px;
   }
   .doc-workbench .doc-prepare-layout {
     grid-template-columns: 300px minmax(0, 1fr);
@@ -5058,13 +5058,13 @@
     min-height: 650px;
   }
   .doc-workbench .doc-preview-paper h3 {
-    font-size: 23px;
-    margin-bottom: 24px;
+    font-size: 21px;
+    margin-bottom: 18px;
   }
   .doc-workbench .doc-preview-paper p {
-    font-size: 15px;
-    margin: 20px 0;
-    line-height: 1.8;
+    font-size: 14px;
+    margin: 14px 0;
+    line-height: 1.5;
   }
   .doc-workbench .doc-workspace-footer {
     padding-inline: 14px;
@@ -5146,3 +5146,5 @@
 .doc-app .doc-latest-file > summary { cursor: pointer; font-size: 13px; font-weight: 500; }
 .doc-app .doc-latest-file > summary > span { font-weight: 400; color: var(--muted); margin-left: 5px; }
 .doc-app .doc-latest-file[open] > summary { margin-bottom: 12px; }
+.doc-app .doc-version-status { border: 0; padding: 0; color: var(--ink); background: none; font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: #c9cfd5; text-underline-offset: 3px; }
+.doc-app .doc-version-status:hover { text-decoration-color: currentColor; }

@@ -125,6 +125,7 @@ export const documentSessionSchema = z.object({
   title: z.string(),
   filename: z.string(),
   currentFilename: z.string(),
+  baselineHash: z.string().optional(),
   currentHash: z.string(),
   revision: z.number().int(),
   pendingCaptures: z.number().int().nonnegative().default(0),

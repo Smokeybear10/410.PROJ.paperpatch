@@ -92,6 +92,8 @@ def save(session: dict) -> None:
 
 def present(session: dict) -> dict:
     result = {key: value for key, value in session.items() if not key.startswith('_')}
+    result['baselineHash'] = session.get('baselineHash') or sha256(
+        (DATA / session['id'] / 'baseline.docx').read_bytes()).hexdigest()
     result['pendingCaptures'] = PENDING_CAPTURES.get(session['id'], 0)
     if result['pendingCaptures']:
         result['export'] = None
@@ -239,8 +241,9 @@ def new_document(data: bytes, filename: str) -> dict:
     ]
     if any(not paragraph['editable'] and paragraph['text'] for paragraph in inspection['paragraphs']):
         warnings.append('Some passages contain tables, fields or other Word structures. They are shown for context and protected from changes.')
+    digest = sha256(data).hexdigest()
     session = dict(id=sid, title=inspection.get('title') or Path(filename).stem,
-                   filename=filename, currentFilename=filename, currentHash=sha256(data).hexdigest(),
+                   filename=filename, currentFilename=filename, baselineHash=digest, currentHash=digest,
                    revision=0, demo=False, createdAt=now(), paragraphs=inspection['paragraphs'],
                    currentParagraphs=inspection['paragraphs'],
                    pages=[dict(number=page['number'], previewUrl=file_url(sid, 'paper/' + page['previewPath']),

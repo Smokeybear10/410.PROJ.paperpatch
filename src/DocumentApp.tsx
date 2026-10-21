@@ -1636,7 +1636,7 @@ function DraftPreview({ session }: { session: DocumentSession }) {
   return (
     <section className="doc-draft-preview">
       <div className="doc-preview-heading">
-        <span className="doc-eyebrow">Latest draft with your changes</span>
+        <span className="doc-eyebrow">Text preview · {session.currentFilename}</span>
         <span>
           <i /> Deleted <i /> Inserted
         </span>
@@ -2154,6 +2154,9 @@ export default function DocumentApp() {
   };
   const pendingCount =
     session?.edits.filter((edit) => !edit.decision).length ?? 0;
+  const draftChanged = !!session && (session.baselineHash
+    ? session.currentHash !== session.baselineHash
+    : session.currentFilename !== session.filename);
   const filteredEdits =
     session?.edits.filter(
       (edit) =>
@@ -2303,6 +2306,7 @@ export default function DocumentApp() {
                 <summary>Sample document <ChevronDown size={13} /></summary>
                 <div className="doc-note-content"><HandwritingSource sample={session.sample} /></div>
               </details>}
+              {draftChanged && <button className="doc-version-status" onClick={() => changeStage("prepare")} title="View the printed version and current Word draft">Newer draft loaded</button>}
               {session.warnings.length > 0 && (
                 <details className="doc-session-warnings">
                   <summary><CircleAlert size={14} /> {session.warnings.length} document note{session.warnings.length === 1 ? "" : "s"}</summary>
@@ -2397,7 +2401,7 @@ export default function DocumentApp() {
               <section className="doc-prepare-copy doc-files-panel" aria-label="Review files">
                 <h2 className="doc-prepare-title">Review files</h2>
                 <div className="doc-file-section">
-                  <h3>Original draft</h3>
+                  <h3>Printed version</h3>
                   <a className="doc-review-file" href={session.baselineUrl} download>
                     <FileText size={24} strokeWidth={1.5} />
                     <span><strong>{session.filename}</strong><small>{session.pages.length} review page{session.pages.length === 1 ? "" : "s"}</small></span>
@@ -2405,6 +2409,12 @@ export default function DocumentApp() {
                   </a>
                   <a className="doc-button compact" href={session.printUrl} target="_blank" rel="noreferrer"><Printer size={16} /> Print review copy</a>
                 </div>
+                <details className="doc-file-section doc-latest-file" open={draftChanged}>
+                  <summary>Current Word draft <span>{draftChanged ? "updated" : "optional"}</span></summary>
+                  <p className="doc-file-hint">{draftChanged ? "This file changed after printing. Check each paper edit against the current wording." : "If you kept editing after printing, add that file to keep your newer changes."}</p>
+                  <a className="doc-review-file" href={session.currentUrl} download><FileText size={22} /><span><strong>{session.currentFilename}</strong><small>{draftChanged ? "Newer version · used for export" : "Same as printed version"}</small></span></a>
+                  <button className="doc-button compact" disabled={!!busy} onClick={() => currentInput.current?.click()}><Upload size={15} /> Choose latest draft</button>
+                </details>
                 <div className="doc-file-section">
                   <h3>Marked pages</h3>
                   {session.sample && !session.scans.some((scan) => scan.source === "sample") && <button className="doc-review-file" onClick={() => selectSource("sample")}>
@@ -2429,12 +2439,6 @@ export default function DocumentApp() {
                     <p>Photograph the whole page with all four corner markers visible. JPG, PNG or WebP, up to 20 MB.</p>
                   </details>
                 </div>
-                <details className="doc-file-section doc-latest-file">
-                  <summary>Latest draft <span>optional</span></summary>
-                  <p className="doc-file-hint">If you kept editing after printing, apply the paper corrections to that version.</p>
-                  <a className="doc-review-file" href={session.currentUrl} download><FileText size={22} /><span><strong>{session.currentFilename}</strong><small>Word file used for export</small></span></a>
-                  <button className="doc-button compact" disabled={!!busy} onClick={() => currentInput.current?.click()}><Upload size={15} /> Choose latest draft</button>
-                </details>
                 {session.trial && (
                   <div className="doc-trial-instructions">
                     <span className="doc-eyebrow">
