@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { documentError, documentRequest, DocumentRequestError } from "./document-types";
 import { DocumentCropViewer } from "./DocumentCropViewer";
+import { DocumentRegionSelector } from "./DocumentRegionSelector";
+import type { DocumentRegion } from "./DocumentRegionSelector";
 import { RecentDocumentReviews } from "./RecentDocumentReviews";
 import type {
   DocumentEdit,
@@ -339,6 +341,10 @@ function ProofViewer({
   onReview,
   onManual,
   onResolveMark,
+  onRegion,
+  requestError,
+  reloadNeeded,
+  reloadReview,
 }: {
   session: DocumentSession;
   selected: DocumentEdit | null;
@@ -348,6 +354,10 @@ function ProofViewer({
   busy: boolean;
   onReview: (id: string) => void;
   onManual: (markId?: string) => void;
+  onRegion: (scanId: string, rect: DocumentRegion) => Promise<boolean>;
+  requestError: string | null;
+  reloadNeeded: boolean;
+  reloadReview: () => void;
   onResolveMark: (
     scanId: string,
     markId: string,
@@ -356,14 +366,17 @@ function ProofViewer({
   ) => Promise<boolean>;
 }) {
   const [zoom, setZoom] = useState(100);
+  const [selectingRegion, setSelectingRegion] = useState(false);
   const [linkingMarkId, setLinkingMarkId] = useState<string | null>(null);
   const [linkedEditId, setLinkedEditId] = useState("");
   const proofScroll = useRef<HTMLDivElement>(null);
   const scan = session.scans.find((item) => item.id === source);
+  const guided = scan?.captureMode === "guided";
   const showingSample = source === "sample" && !!session.sample;
   useEffect(() => {
     setLinkingMarkId(null);
     setLinkedEditId("");
+    setSelectingRegion(false);
   }, [source]);
   useEffect(() => {
     const viewport = proofScroll.current;
@@ -419,7 +432,7 @@ function ProofViewer({
             ))}
             {session.scans.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.filename} · page {item.page}
+                {item.filename} · {item.captureMode === "guided" ? "photo" : `page ${item.page}`}
               </option>
             ))}
           </select>
@@ -442,6 +455,10 @@ function ProofViewer({
           </button>
         </div>
       </div>
+      {guided && scan && <div className="doc-guided-photo-tools">
+        <div><b>Choose the handwriting, then its Word passage</b><p>This photo is not aligned to the printed copy. Select one handwritten line at a time; you will identify where it belongs.</p></div>
+        {!selectingRegion && <button className="doc-button compact" disabled={busy} onClick={() => setSelectingRegion(true)}><PenLine size={15} /> Select handwriting</button>}
+      </div>}
       {scan && <CaptureReport scan={scan} />}
       {captureProblems.length > 0 && (
         <div className="doc-capture-problem">
@@ -460,20 +477,31 @@ function ProofViewer({
           </div>
         </div>
       )}
-      <div className="doc-proof-scroll" ref={proofScroll}>
+      {selectingRegion && guided && scan ? <DocumentRegionSelector
+        key={scan.id}
+        scan={scan}
+        busy={busy}
+        error={requestError}
+        reloadNeeded={reloadNeeded}
+        onReload={reloadReview}
+        onCancel={() => setSelectingRegion(false)}
+        onSubmit={async (rect) => {
+          if (await onRegion(scan.id, rect)) setSelectingRegion(false);
+        }}
+      /> : <div className="doc-proof-scroll" ref={proofScroll}>
         {page ? (
           <div
             className="doc-proof-paper"
             style={{
               width: `${zoom}%`,
-              aspectRatio: `${page.width} / ${page.height}`,
+              aspectRatio: guided && scan?.imageWidth && scan.imageHeight ? `${scan.imageWidth} / ${scan.imageHeight}` : `${page.width} / ${page.height}`,
             }}
           >
             <img
               src={showingSample ? session.sample?.inputUrl : scan?.alignedUrl ?? page.previewUrl}
               alt={
                 showingSample ? "Human handwriting composited on a review page, before recognition" : scan
-                  ? `${scan.reviewer}’s marked review page ${scan.page}`
+                  ? guided ? `${scan.reviewer}’s uploaded photograph` : `${scan.reviewer}’s marked review page ${scan.page}`
                   : `Printable review page ${page.number}`
               }
               draggable={false}
@@ -523,8 +551,8 @@ function ProofViewer({
         ) : (
           <p className="doc-empty">No review page is available.</p>
         )}
-      </div>
-      {scan && unmatchedMarks.length > 0 && (
+      </div>}
+      {!selectingRegion && scan && unmatchedMarks.length > 0 && (
         <section
           className="doc-mark-queue"
           aria-label="Pen marks to account for"
@@ -533,7 +561,7 @@ function ProofViewer({
             <b>
               {unresolvedMarks.length
                 ? `${unresolvedMarks.length} pen mark${unresolvedMarks.length === 1 ? " needs" : "s need"} attention`
-                : "Every detected pen mark is accounted for"}
+                : guided ? "Every selected region is accounted for" : "Every detected pen mark is accounted for"}
             </b>
             <span>
               {unmatchedMarks.length - unresolvedMarks.length}/
@@ -567,6 +595,8 @@ function ProofViewer({
                         ? "Linked to a correction"
                         : mark.reason}
                   </p>
+                  {mark.recognitionWarning && <p className="doc-field-error">{mark.recognitionWarning}</p>}
+                  {!mark.resolution && mark.ocrText !== undefined && <p className="doc-region-reading">Initial reading: {mark.ocrText || "No text returned"}</p>}
                   <div className="doc-mark-actions">
                     {mark.resolution === "ignored" ? (
                       <button
@@ -602,7 +632,7 @@ function ProofViewer({
                           disabled={busy}
                           onClick={() => onManual(mark.id)}
                         >
-                          Enter correction <Plus size={13} />
+                          {guided ? "Choose Word passage" : "Enter correction"} <Plus size={13} />
                         </button>
                         {linkableEdits.length > 0 && linkingMarkId !== mark.id && (
                           <button
@@ -676,7 +706,7 @@ function ProofViewer({
           </div>
         </section>
       )}
-      {scan ? (
+      {selectingRegion ? null : scan ? (
         <div className="doc-proof-footer">
           <div>
             <b>
@@ -915,7 +945,7 @@ function EditInspector({
     >
       <div className="doc-inspector-top">
         <span className="doc-eyebrow">
-          {edit.reviewer} · Page {edit.page}
+          {edit.reviewer} · {session.scans.find((scan) => scan.id === edit.scanId)?.captureMode === "guided" ? "Photo" : `Page ${edit.page}`}
         </span>
         <div>
           <span className="doc-correction-position">{index + 1} / {session.edits.length}</span>
@@ -940,6 +970,7 @@ function EditInspector({
           <h2>{editAction(edit)} text</h2>
           <SourceBadge edit={edit} />
         </div>
+        {edit.targetSelection === "manual" && <p className="doc-manual-target-note">Word passage selected by the reviewer.</p>}
         {!edit.decision && edit.status !== "ready" && (
           <div className={`doc-state-note ${edit.status === "conflict" || edit.status === "overlap" ? "conflict" : ""}`}>
             <CircleAlert size={16} />
@@ -1186,6 +1217,7 @@ function ManualDialog({
   reloadNeeded: boolean;
   reloadReview: () => void;
 }) {
+  const initialMark = session.scans.find((scan) => scan.id === initialScanId)?.marks?.find((mark) => mark.id === initialMarkId);
   const draftSchema = z.object({
     version: z.literal(1),
     sessionId: z.literal(session.id),
@@ -1216,7 +1248,7 @@ function ManualDialog({
   const [target, setTarget] = useState(storedDraft?.target ?? "");
   const [occurrence, setOccurrence] = useState(storedDraft?.occurrence ?? 0);
   const [operation, setOperation] = useState<string>(storedDraft?.operation ?? "replace");
-  const [replacement, setReplacement] = useState(storedDraft?.replacement ?? "");
+  const [replacement, setReplacement] = useState(storedDraft?.replacement ?? initialMark?.ocrText ?? "");
   const [reviewer, setReviewer] = useState(storedDraft?.reviewer ?? initialReviewer);
   const [scanId, setScanId] = useState(storedDraft?.scanId ?? initialScanId);
   const [draftSaved, setDraftSaved] = useState(Boolean(storedDraft));
@@ -1228,7 +1260,7 @@ function ManualDialog({
     (item) => item.id === initialMarkId,
   );
   const passages = useMemo(() => {
-    const ranges = sourceScan
+    const ranges = sourceScan && sourceScan.captureMode !== "guided"
       ? (session.pages.find((page) => page.number === sourceScan.page)
           ?.textRanges ?? [])
       : session.paragraphs.map((paragraph) => ({
@@ -1359,7 +1391,7 @@ function ManualDialog({
       <form onSubmit={submit}>
         <header>
           <div>
-            <span className="doc-eyebrow">MANUAL CORRECTION</span>
+            <span className="doc-eyebrow">{sourceScan?.captureMode === "guided" ? "MATCH PHOTO TO WORD" : "MANUAL CORRECTION"}</span>
             <h2 id="manual-correction-heading">Point to the exact passage.</h2>
           </div>
           <button
@@ -1372,21 +1404,25 @@ function ManualDialog({
           </button>
         </header>
         <p className="doc-fine-print">
-          Add a missed mark or a correction you transcribed yourself. It is
-          recorded as manual, not handwriting recognition.
+          {sourceScan?.captureMode === "guided"
+            ? "Choose the exact words in the original Word draft and check the selected handwriting. You choose the target; the initial reading stays recorded."
+            : "Add a missed mark or a correction you transcribed yourself. It is recorded as manual, not handwriting recognition."}
         </p>
         {sourceMark && sourceScan && (
           <div className="doc-manual-mark-source">
             <span className="doc-eyebrow">
-              SOURCE MARK · PAGE {sourceScan.page}
+              {sourceScan.captureMode === "guided" ? "SELECTED HANDWRITING" : `SOURCE MARK · PAGE ${sourceScan.page}`}
             </span>
             <DocumentCropViewer
               src={sourceMark.cropUrl}
-              alt="Pen mark being entered as a manual correction"
+              alt="Selected pen mark for this correction"
             />
             <a href={sourceScan.alignedUrl} target="_blank" rel="noreferrer">
               View the whole source page <ArrowRight size={13} />
             </a>
+            {sourceMark.recognitionWarning && <p className="doc-field-error">{sourceMark.recognitionWarning} You can enter the intended text below.</p>}
+            {sourceMark.ocrText !== undefined && <details className="doc-region-ocr-record"><summary>Initial handwriting reading</summary><p>{sourceMark.ocrText || "No text returned"}</p></details>}
+            {!!sourceMark.ocrAlternatives?.length && <div className="doc-region-alternatives"><p>Other machine readings to check:</p>{sourceMark.ocrAlternatives.slice(0, 2).map((reading) => <button type="button" className="doc-button compact" key={reading} disabled={busy} onClick={() => setReplacement(reading)}>{reading}</button>)}</div>}
           </div>
         )}
         <label>
@@ -1404,13 +1440,13 @@ function ManualDialog({
             <option value="">No photo — manual instruction</option>
             {session.scans.map((scan) => (
               <option key={scan.id} value={scan.id}>
-                {scan.reviewer} · page {scan.page}
+                {scan.reviewer} · {scan.captureMode === "guided" ? "photo" : `page ${scan.page}`}
               </option>
             ))}
           </select>
         </label>
         <label>
-          {sourceScan
+          {sourceScan?.captureMode === "guided" ? "Passage in the original Word draft" : sourceScan
             ? `Printed passage on page ${sourceScan.page}`
             : "Printed paragraph"}
           <select
@@ -1878,6 +1914,7 @@ export default function DocumentApp() {
   const [filter, setFilter] = useState<"all" | "pending" | "conflicts">("all");
   const currentInput = useRef<HTMLInputElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
+  const ordinaryPhotoInput = useRef<HTMLInputElement>(null);
   const mounted = useRef(false);
   const requestVersion = useRef(0);
   const inFlight = useRef(false);
@@ -2057,6 +2094,31 @@ export default function DocumentApp() {
         : marks
           ? `${marks} pen-mark ${marks === 1 ? "region needs" : "regions need"} your reading. Enter the intended correction, or mark an annotation as not changing the text.`
           : "No corrections were detected on this photo. Inspect the source and enter missed marks manually, or try a clearer photograph.");
+    });
+  };
+  const uploadOrdinaryPhoto = async (file: File) => {
+    if (!session || !canLeaveReading()) return;
+    const form = new FormData();
+    form.append("file", file);
+    form.append("reviewer", reviewer.trim() || "Reviewer");
+    form.append("revision", String(session.revision));
+    await perform("photo", () => documentRequest(`/api/documents/${session.id}/photos`, { method: "POST", body: form }), (value) => {
+      setSource(value.scans.at(-1)?.id ?? source);
+      setSelectedId(null);
+      setStage("review");
+      setNotice("Photo saved. Select handwritten text, then choose the exact words to replace or insert beside in Word.");
+    });
+  };
+  const addRegion = async (scanId: string, rect: DocumentRegion): Promise<boolean> => {
+    if (!session || !canLeaveReading()) return false;
+    return perform("region", () => documentRequest(`/api/documents/${session.id}/scans/${scanId}/regions`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revision: session.revision, rect }),
+    }), (value) => {
+      const mark = value.scans.find((scan) => scan.id === scanId)?.marks?.at(-1);
+      setSource(scanId);
+      setSelectedId(null);
+      if (mark) { setManualMarkId(mark.id); setManual(true); }
     });
   };
   const readHandwritingSample = async () => {
@@ -2322,6 +2384,7 @@ export default function DocumentApp() {
                 <button className="doc-button compact" disabled={!!busy || (!!session.trial && session.scans.length > 0)} onClick={() => photoInput.current?.click()}>
                   <ImagePlus size={16} /> Add marked page
                 </button>
+                {!session.trial && <button className="doc-button compact" disabled={!!busy} onClick={() => ordinaryPhotoInput.current?.click()}><ImagePlus size={16} /> Add ordinary photo</button>}
                 <button className="doc-button compact" disabled={!!busy || !session.paragraphs.some((paragraph) => paragraph.editable)} onClick={() => openManual()}>
                   <Plus size={16} /> Add correction
                 </button>
@@ -2350,6 +2413,11 @@ export default function DocumentApp() {
               event.target.value = "";
             }}
           />
+          <input ref={ordinaryPhotoInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) uploadOrdinaryPhoto(file);
+            event.target.value = "";
+          }} />
           {session.trial && (
             <section className="doc-trial-bar" aria-label="Real-pen check">
               <div>
@@ -2422,8 +2490,8 @@ export default function DocumentApp() {
                     <span><strong>marked-page-01.png</strong><small>{session.pendingCaptures ? "Reading corrections…" : "Ready to read"}</small></span>
                   </button>}
                   {session.scans.map((scan) => <button className="doc-review-file" key={scan.id} onClick={() => selectSource(scan.id)}>
-                    <img src={scan.alignedUrl} alt={`Marked page ${scan.page}`} />
-                    <span><strong>{scan.filename}</strong><small>Page {scan.page} · {session.edits.filter((edit) => edit.scanId === scan.id).length} corrections</small></span>
+                    <img src={scan.alignedUrl} alt={scan.captureMode === "guided" ? "Uploaded photograph" : `Marked page ${scan.page}`} />
+                    <span><strong>{scan.filename}</strong><small>{scan.captureMode === "guided" ? "Photo" : `Page ${scan.page}`} · {session.edits.filter((edit) => edit.scanId === scan.id).length} corrections</small></span>
                     {scan.reviewed && <Check size={15} />}
                   </button>)}
                   {!session.sample && !session.scans.length && <p className="doc-file-hint">Add a photo after marking the review copy.</p>}
@@ -2432,6 +2500,7 @@ export default function DocumentApp() {
                     {session.pendingCaptures ? <LoaderCircle className="doc-spin" size={16} /> : <ArrowRight size={16} />}{session.pendingCaptures ? "Reading corrections…" : "Find corrections"}
                   </button> : session.scans.length > 0 ? <button className="doc-button primary" disabled={!!busy} onClick={() => changeStage("review")}>Review corrections <ArrowRight size={16} /></button> : null}
                   <button className={`doc-button ${session.sample || session.scans.length ? "compact" : "primary"}`} disabled={!!busy || (!!session.trial && session.scans.length > 0)} onClick={() => photoInput.current?.click()}><ImagePlus size={16} /> Add marked page</button>
+                  {!session.trial && <div className="doc-ordinary-upload"><button className="doc-button compact" disabled={!!busy} onClick={() => ordinaryPhotoInput.current?.click()}><ImagePlus size={16} /> Add ordinary photo</button><p className="doc-file-hint">Already printed your own Word document? Add its photo, select the handwriting, then identify the passage. No page markers needed.</p></div>}
                   {session.sample && <div className="doc-sample-source-note"><p className="doc-file-hint">Sample page assembled with real handwriting.</p><details className="doc-file-help"><summary>About this sample</summary><HandwritingSource sample={session.sample} /><a href={session.sample.inputUrl} download>Download marked page</a></details></div>}
                   <details className="doc-file-help">
                     <summary>How to mark the page</summary>
@@ -2481,6 +2550,10 @@ export default function DocumentApp() {
                 busy={!!busy}
                 onReview={(id) => mutate(`/scans/${id}/review`, {})}
                 onResolveMark={resolveMark}
+                onRegion={addRegion}
+                requestError={error}
+                reloadNeeded={reloadNeeded}
+                reloadReview={reloadReview}
                 onManual={openManual}
               />
             </div>
@@ -2581,6 +2654,10 @@ export default function DocumentApp() {
                   busy={!!busy}
                   onReview={(id) => mutate(`/scans/${id}/review`, {})}
                   onResolveMark={resolveMark}
+                  onRegion={addRegion}
+                  requestError={error}
+                  reloadNeeded={reloadNeeded}
+                  reloadReview={reloadReview}
                   onManual={openManual}
                 />
                 {selected ? (
@@ -2610,6 +2687,8 @@ export default function DocumentApp() {
                     <p>
                       {unresolvedMark
                         ? "The ink is preserved on the page. Choose the words it changes and enter the correction, or use “Not an edit” in the pen-mark list."
+                        : activeScan?.captureMode === "guided"
+                        ? "Use Select handwriting beside the photo. The reader will suggest text; you choose the matching Word passage. For a deletion with no new handwriting, enter the correction yourself."
                         : activeScan
                         ? "Inspect this photograph for marks the scanner missed. Enter a correction yourself, or select an existing one from the list."
                         : "Add a photo of your printed review copy, or select a correction from the list."}
@@ -2630,7 +2709,7 @@ export default function DocumentApp() {
                         activeScan && session.trial
                           ? start(undefined, "trial")
                           : activeScan
-                            ? photoInput.current?.click()
+                            ? activeScan.captureMode === "guided" ? ordinaryPhotoInput.current?.click() : photoInput.current?.click()
                             : changeStage("prepare")
                       }
                     >

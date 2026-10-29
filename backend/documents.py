@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from hashlib import sha256
+from math import isfinite
 from pathlib import Path
 from threading import BoundedSemaphore, RLock
 from time import perf_counter
@@ -14,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.docx_engine import inspect_docx, rebase_edit, export_docx
 from backend.document_capture import generate_document_proof, scan_document_photo
+from backend.document_photos import prepare_guided_photo, read_guided_region
 
 
 DATA = Path(__file__).resolve().parent.parent / '.data' / 'documents'
@@ -55,6 +57,21 @@ class EditUpdate(RevisionBody):
 
 class ExportBody(RevisionBody):
     currentHash: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class PhotoRegion(RevisionBody):
+    rect: tuple[float, float, float, float]
+
+    @model_validator(mode='before')
+    @classmethod
+    def valid_rectangle(cls, value: object) -> object:
+        if isinstance(value, dict):
+            rect = value.get('rect')
+            if isinstance(rect, (list, tuple)) and any(
+                type(coordinate) not in (int, float) or not isfinite(coordinate) for coordinate in rect
+            ):
+                raise ValueError('Use four finite numbers for the handwriting region.')
+        return value
 
 
 class MarkUpdate(RevisionBody):
@@ -103,7 +120,8 @@ def present(session: dict) -> dict:
     result['scans'] = [
         {**{key: value for key, value in scan.items() if not key.startswith('_')},
          'marks': [{**mark, 'resolution': mark.get('resolution'), 'editId': mark.get('editId'),
-                    'suggestedParagraphId': nearest_mark_paragraph(pages[scan['page']], mark['rect'], session['_manifest'])}
+                    'suggestedParagraphId': None if scan.get('captureMode') == 'guided' else
+                        nearest_mark_paragraph(pages[scan['page']], mark['rect'], session['_manifest'])}
                    for mark in scan.get('marks', [])]}
         for scan in session['scans']
     ]
@@ -559,6 +577,106 @@ def add_scan(sid: str, file: UploadFile, reviewer: str = Form(...),
         SCANNERS.release()
 
 
+@router.post('/{sid}/photos')
+def add_photo(sid: str, file: UploadFile, reviewer: str = Form(...),
+              revision: int = Form(..., ge=0)) -> dict:
+    if not reviewer.strip() or len(reviewer) > 80:
+        raise ValueError('Enter a reviewer name of up to 80 characters.')
+    data = upload_bytes(file)
+    digest = sha256(data).hexdigest()
+    if not SCANNERS.acquire(blocking=False):
+        raise HTTPException(429, 'Two pages are already being read. Try again when one finishes.')
+    registered = False
+    try:
+        with LOCK:
+            session = load(sid)
+            require_revision(session, revision)
+            if session.get('trial'):
+                raise ValueError('Use the printed capture-check page for this trial. Open a Word draft to review an ordinary photo.')
+            if len(session['scans']) >= 24:
+                raise ValueError('This review supports up to 24 photographs.')
+            if any(scan.get('_hash') == digest for scan in session['scans']):
+                raise ValueError('This photograph is already in the review.')
+            scan_id = uuid4().hex
+            output = document_dir(sid) / 'scans' / scan_id
+            PENDING_CAPTURES[sid] = PENDING_CAPTURES.get(sid, 0) + 1
+            registered = True
+        result = prepare_guided_photo(data, output)
+        suffix = '.jpg' if data.startswith(b'\xff\xd8\xff') else '.png' if data.startswith(b'\x89PNG') else '.webp' if data[:4] == b'RIFF' and data[8:12] == b'WEBP' else '.bin'
+        upload_name = 'source-upload' + suffix
+        (output / upload_name).write_bytes(data)
+        with LOCK:
+            session = load(sid)
+            require_revision(session, revision)
+            if len(session['scans']) >= 24 or any(scan.get('_hash') == digest for scan in session['scans']):
+                raise HTTPException(409, 'The review changed while this photograph was being prepared. Reload to continue.')
+            prefix = f'scans/{scan_id}/'
+            preview_url = file_url(sid, prefix + result['previewPath'])
+            session['scans'].append(dict(
+                id=scan_id, filename=safe_name(file), reviewer=reviewer.strip(), page=1, createdAt=now(),
+                captureMode='guided', imageWidth=result['imageWidth'], imageHeight=result['imageHeight'],
+                alignedUrl=preview_url, originalUrl=preview_url, uploadUrl=file_url(sid, prefix + upload_name),
+                reviewed=False, source='photo', markCount=0, marks=[], _hash=digest,
+                warnings=['Select each handwritten correction and match it to the Word draft.']))
+            changed(session)
+    finally:
+        if registered:
+            with LOCK:
+                PENDING_CAPTURES[sid] -= 1
+                if not PENDING_CAPTURES[sid]:
+                    del PENDING_CAPTURES[sid]
+        SCANNERS.release()
+    with LOCK:
+        return present(load(sid))
+
+
+@router.post('/{sid}/scans/{scan_id}/regions')
+def select_photo_region(sid: str, scan_id: str, body: PhotoRegion) -> dict:
+    if not SCANNERS.acquire(blocking=False):
+        raise HTTPException(429, 'Two pages are already being read. Try again when one finishes.')
+    registered = False
+    try:
+        with LOCK:
+            session = load(sid)
+            require_revision(session, body.revision)
+            scan = next((scan for scan in session['scans'] if scan['id'] == scan_id), None)
+            if scan is None:
+                raise HTTPException(404, 'Source photo not found.')
+            if scan.get('captureMode') != 'guided':
+                raise ValueError('Select handwriting on an ordinary photo. Printed review pages use automatic capture.')
+            if len(scan['marks']) >= 96:
+                raise ValueError('This photo already has 96 selected regions. Review those regions before adding another photo.')
+            mark_id = uuid4().hex
+            path = document_dir(sid) / 'scans' / scan_id
+            output = path / 'regions' / mark_id
+            PENDING_CAPTURES[sid] = PENDING_CAPTURES.get(sid, 0) + 1
+            registered = True
+        result = read_guided_region(path / 'photo.png', list(body.rect), output)
+        with LOCK:
+            session = load(sid)
+            require_revision(session, body.revision)
+            scan = next(scan for scan in session['scans'] if scan['id'] == scan_id)
+            if any(mark['rect'] == result['rect'] for mark in scan['marks']):
+                raise ValueError('This area is already selected. Review its existing reading in the photo list.')
+            scan['marks'].append(dict(
+                id=mark_id, rect=result['rect'], origin='selection',
+                cropUrl=file_url(sid, f'scans/{scan_id}/regions/{mark_id}/' + result['cropPath']),
+                reason='Match this selected handwriting to the Word draft.', resolution=None, editId=None,
+                ocrText=result['ocrText'], ocrAlternatives=result['ocrAlternatives'],
+                recognitionWarning=result['recognitionWarning'], captureSeconds=result['captureSeconds']))
+            scan.update(markCount=len(scan['marks']), reviewed=False, recognizer=result['recognizer'])
+            changed(session)
+    finally:
+        if registered:
+            with LOCK:
+                PENDING_CAPTURES[sid] -= 1
+                if not PENDING_CAPTURES[sid]:
+                    del PENDING_CAPTURES[sid]
+        SCANNERS.release()
+    with LOCK:
+        return present(load(sid))
+
+
 @router.post('/{sid}/edits')
 def add_edit(sid: str, body: NewEdit) -> dict:
     with LOCK:
@@ -570,10 +688,10 @@ def add_edit(sid: str, body: NewEdit) -> dict:
         mark = None
         if scan:
             page = next((page for page in session['_manifest']['pages'] if page['number'] == scan['page']), None)
-            if page is None or not any(
+            if scan.get('captureMode') != 'guided' and (page is None or not any(
                 span['paragraphId'] == body.paragraphId and span['start'] <= body.start <= body.end <= span['end']
                 for span in page_text_ranges(page)
-            ):
+            )):
                 raise ValueError('The selected text is not on that source page. Choose text shown on the matching page or add a manual instruction without a photo.')
             if body.sourceMarkId is not None:
                 mark = next((mark for mark in scan.get('marks', []) if mark['id'] == body.sourceMarkId), None)
@@ -588,6 +706,12 @@ def add_edit(sid: str, body: NewEdit) -> dict:
             scan['reviewed'] = False
         if mark is not None:
             edit.update(sourceMarkId=mark['id'], cropUrl=mark['cropUrl'], rect=mark['rect'], page=scan['page'])
+            if scan.get('captureMode') == 'guided':
+                edit.update(targetSelection='manual', ocrText=mark.get('ocrText', ''),
+                            ocrAlternatives=mark.get('ocrAlternatives', []),
+                            kind='insert' if body.start == body.end else 'replace' if body.replacement else 'delete')
+                if any(reading.strip() for reading in [mark.get('ocrText', ''), *mark.get('ocrAlternatives', [])]):
+                    edit.update(source='ocr', confirmed=False)
             mark.update(resolution='correction', editId=edit['id'])
         changed(session)
         return present(session)
