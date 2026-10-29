@@ -1,0 +1,119 @@
+.transcription-app { --ground: #eeeeef; }
+.transcription-header { height: 62px; display: flex; align-items: center; gap: 30px; padding: 0 28px; background: #fff; border-bottom: 1px solid var(--line); }
+.transcription-brand { display: flex; align-items: center; gap: 9px; font-size: 20px; font-weight: 600; letter-spacing: -.5px; }
+.transcription-breadcrumb { color: var(--muted); font-size: 13px; border-left: 1px solid var(--line); padding-left: 25px; }
+.transcription-header-link { margin-left: auto; color: var(--muted); font-size: 12px; }
+.transcription-start { max-width: 740px; margin: 65px auto; padding: 0 28px; }
+.transcription-start h1 { font-size: 27px; letter-spacing: -.5px; margin-bottom: 12px; }
+.transcription-start > p { color: var(--muted); max-width: 570px; }
+.transcription-upload { margin-top: 30px; background: #fff; border: 1px solid #c5c8cc; padding: 38px; text-align: center; }
+.transcription-upload.dragging { border-color: var(--blue); background: #f0f5f9; }
+.transcription-upload > svg { margin: 0 auto 15px; color: #58616b; }
+.transcription-upload h2 { font-size: 19px; }
+.transcription-upload p { color: var(--muted); font-size: 12px; margin-top: 6px; margin-bottom: 22px; }
+.transcription-start p.transcription-local { font-size: 12px; margin-top: 18px; }
+.transcription-notice { display: flex; align-items: center; gap: 12px; padding: 12px 28px; background: #f9f5e9; border-bottom: 1px solid #ddd4b9; font-size: 12px; line-height: 1.5; }
+.transcription-notice.error { background: #fff0ec; color: #8b352b; border-color: #e8b6aa; }
+.transcription-notice > span { flex: 1; }
+.transcription-notice a { text-decoration: underline; }
+.transcription-toolbar { min-height: 76px; background: #fff; border-bottom: 1px solid var(--line); padding: 14px 28px; display: flex; align-items: center; gap: 18px; }
+.transcription-back { padding: 8px; border: 1px solid var(--line); }
+.transcription-title { min-width: 0; }
+.transcription-title h1 { font-size: 17px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
+.transcription-title > span { color: var(--muted); font-size: 12px; display: block; margin-top: 5px; }
+.transcription-actions { margin-left: auto; display: flex; align-items: center; gap: 15px; flex-shrink: 0; }
+.transcription-saving { display: flex; gap: 7px; align-items: center; color: var(--muted); font-size: 11px; }
+.transcription-progress { padding: 14px 28px; display: flex; align-items: center; gap: 10px; background: #eaf0f5; border-bottom: 1px solid #c6d3de; font-size: 12px; }
+.transcription-spinner { animation: transcription-spin 1s linear infinite; }
+@keyframes transcription-spin { to { transform: rotate(360deg); } }
+.transcription-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 1fr); align-items: start; max-width: 1600px; margin: auto; }
+.transcription-source { position: sticky; top: 0; min-width: 0; border-right: 1px solid #c9cbd0; }
+.transcription-pane-heading { min-height: 47px; background: #f7f7f8; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 10px 22px; gap: 12px; }
+.transcription-pane-heading h2 { font-size: 13px; font-weight: 500; }
+.transcription-pane-heading > div { display: flex; gap: 18px; }
+.transcription-pane-heading button, .transcription-pane-heading a { font-size: 11px; color: #4c5c6b; text-decoration: underline; text-underline-offset: 3px; }
+.transcription-source-scroll { max-height: calc(100vh - 78px); overflow: auto; padding: 20px 25px; }
+.transcription-image { position: relative; width: 100%; max-width: 650px; margin: auto; box-shadow: 0 1px 6px #0002; }
+.transcription-image.enlarged { width: 150%; max-width: none; }
+.transcription-image > img { width: 100%; height: auto; display: block; }
+.transcription-region { position: absolute; border: 1px solid #307cb2; background: #2c8bc216; box-shadow: 0 0 0 2px #fff8; pointer-events: none; min-height: 3px; }
+.transcription-source-caption { text-align: center; color: #686b70; font-size: 10px; padding: 0 12px 15px; }
+.transcription-review { background: #fff; min-height: calc(100vh - 138px); min-width: 0; }
+.transcription-review-intro { border-bottom: 1px solid #e2e3e5; padding: 15px 23px; }
+.transcription-review-intro p { font-size: 12px; }
+.transcription-review-intro span { color: var(--muted); font-size: 11px; display: block; margin-top: 3px; }
+.transcription-lines { list-style: none; margin: 0; padding: 0; }
+.transcription-line { border-bottom: 1px solid #e6e7e9; }
+.transcription-line.selected { background: #f5f8fa; }
+.transcription-line-select { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 22px; }
+.transcription-line-select:hover { background: #f5f6f7; }
+.transcription-line-number { color: #777d84; font: 10px "IBM Plex Mono", monospace; width: 20px; flex-shrink: 0; }
+.transcription-line-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.transcription-line-text small { display: block; font-size: 10px; color: #737a80; }
+.transcription-line.dismissed .transcription-line-text { text-decoration: line-through; color: #8e9297; }
+.transcription-line-state { font-size: 10px; color: #44715e; flex-shrink: 0; }
+.transcription-unchecked { display: block; width: 7px; height: 7px; border: 1px solid #9b8a66; border-radius: 50%; }
+.transcription-line-editor { padding: 0 23px 17px 54px; }
+.transcription-crop { display: block; max-width: 100%; width: auto; max-height: 110px; min-height: 40px; margin: 0 0 13px; border: 1px solid #d4d9df; background: #fff; }
+.doc-app .transcription-line-editor > label { font-size: 11px; }
+.doc-app .transcription-line-editor textarea { font-size: 15px; padding: 9px 11px; }
+.doc-app label.transcription-check { display: flex; flex-direction: row; align-items: flex-start; gap: 9px; font-weight: 400; line-height: 1.6; font-size: 12px; margin-top: 12px; }
+.transcription-check input { margin-top: 3px; accent-color: #354d60; flex-shrink: 0; width: 14px; height: 14px; }
+.transcription-original-reading { font-size: 11px; margin-top: 12px; color: #5e6670; }
+.transcription-original-reading summary { width: fit-content; }
+.transcription-original-reading p { color: #3d4650; margin-top: 7px; padding: 8px 10px; background: #e9edf1; overflow-wrap: anywhere; }
+.transcription-original-reading button { text-align: left; display: block; margin-top: 7px; text-decoration: underline; }
+.transcription-line-buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; margin-top: 13px; }
+.transcription-quiet { font-size: 11px; color: #58636d; display: inline-flex; align-items: center; gap: 5px; text-decoration: underline; text-underline-offset: 3px; }
+.transcription-line-warning { font-size: 11px; color: #80593c; margin: 10px 0 !important; }
+.transcription-add { padding: 18px 23px; border-bottom: 1px solid var(--line); }
+.transcription-manual-form { display: grid; gap: 12px; }
+.transcription-manual-form > div { display: flex; gap: 16px; align-items: center; }
+.transcription-finish { padding: 20px 23px 28px; background: #f8f9fa; border-top: 1px solid var(--line); }
+.transcription-finish > .doc-button { margin-top: 15px; }
+.transcription-confirm-all { display: flex; align-items: center; justify-content: space-between; gap: 15px; font-size: 12px; padding-bottom: 15px; border-bottom: 1px solid var(--line); }
+.transcription-confirm-all .doc-button { flex-shrink: 0; }
+.transcription-complete { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #42624f; margin-top: 15px !important; }
+.transcription-audit { display: block; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; color: #626b73; margin-top: 16px; }
+.transcription-document { padding: 35px 40px 50px; font-family: Calibri, Arial, sans-serif; font-size: 16px; min-height: 440px; }
+.transcription-document p { margin-bottom: 18px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.transcription-document .transcription-preview-note { font-family: "IBM Plex Sans", sans-serif; font-size: 11px; color: #8a6341; }
+.transcription-empty { padding: 25px; color: #61676f; font-size: 12px; }
+.doc-app .transcription-entry { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 18px; display: flex; align-items: center; gap: 14px; }
+.transcription-entry h2 { font-size: 15px; }
+.transcription-entry p { font-size: 12px; color: var(--muted); }
+.transcription-entry a { margin-left: auto; }
+@media (max-width: 900px) {
+  .transcription-header { padding: 0 18px; gap: 18px; }
+  .transcription-breadcrumb { padding-left: 18px; }
+  .transcription-toolbar { padding: 12px 16px; gap: 10px; flex-wrap: wrap; }
+  .transcription-title h1 { max-width: 65vw; }
+  .transcription-actions { margin-left: auto; }
+  .transcription-saving { display: none; }
+  .transcription-workspace { grid-template-columns: minmax(0, 45%) minmax(0, 55%); }
+  .transcription-source-scroll { padding: 14px; }
+  .transcription-line-select { padding: 12px; gap: 8px; }
+  .transcription-line-editor { padding-left: 32px; padding-right: 15px; }
+  .transcription-pane-heading { padding: 10px 13px; }
+  .transcription-pane-heading > div { gap: 10px; }
+  .transcription-confirm-all { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 650px) {
+  .transcription-header { height: 57px; }
+  .transcription-brand { font-size: 18px; }
+  .transcription-breadcrumb { display: none; }
+  .transcription-header-link { font-size: 11px; }
+  .transcription-start { margin-top: 35px; padding: 0 20px; }
+  .transcription-start h1 { font-size: 23px; }
+  .transcription-upload { padding: 28px 17px; }
+  .transcription-workspace { display: block; }
+  .transcription-source { position: static; border-right: 0; }
+  .transcription-source-scroll { max-height: 50vh; }
+  .transcription-image { max-width: 460px; }
+  .transcription-actions { width: calc(100% - 43px); margin-left: 43px; }
+  .transcription-notice, .transcription-progress { padding: 12px 18px; }
+  .transcription-document { padding: 25px; }
+  .doc-app .transcription-entry { flex-wrap: wrap; }
+  .transcription-entry a { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .transcription-spinner { animation: none; } }

@@ -190,6 +190,11 @@ function Landing({
           event.target.value = "";
         }} />
       </section>
+      <section className="transcription-entry">
+        <PenLine size={22} strokeWidth={1.5} />
+        <div><h2>Starting with a handwritten page?</h2><p>Read a whole page into a new Word document.</p></div>
+        <a className="doc-text-link" href="?mode=handwriting">Open handwriting <ArrowRight size={14} /></a>
+      </section>
       <RecentDocumentReviews busy={!!busy} />
       <footer className="doc-library-footer">
         <span>Need a document to try?</span>

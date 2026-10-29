@@ -20,6 +20,7 @@ from backend.paper import generate_paper, scan_photo
 from backend import review
 from backend.verification import verify_export
 from backend.documents import router as documents_router
+from backend.transcription import router as transcription_router
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / '.data' / 'sessions'
@@ -712,6 +713,7 @@ def demo_session() -> dict:
         return present(session)
 
 app.include_router(documents_router)
+app.include_router(transcription_router)
 
 if (ROOT / 'dist').exists():
     app.mount('/', StaticFiles(directory=ROOT / 'dist', html=True), name='frontend')

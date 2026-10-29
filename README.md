@@ -1,8 +1,8 @@
 # PAPERPATCH | Paper to Word
 
-**[Download the test build](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest)** · **[Watch the 2-minute demo](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/download/v0.1.1/paperpatch-demo-v0.1.1.mp4)**
+**[Download the v0.1.1 test build](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest)** · **[Watch the original correction demo](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/download/v0.1.1/paperpatch-demo-v0.1.1.mp4)**
 
-Compare handwritten corrections with the latest Word draft, choose what to keep, and export native tracked changes.
+Review handwritten corrections against Word drafts, or transcribe a handwritten page into an editable document.
 
 ![Reviewing a paper correction against the latest Word draft](docs/screenshots/paperpatch.png)
 
@@ -21,9 +21,11 @@ npm run setup:document-ocr
 npm start
 ```
 
-Open http://localhost:7171 and choose **Open working example**.
+Open http://localhost:7171 and choose **Open Word file** or **Open handwriting**.
 
-No API key is required. OCR setup downloads two pinned PP-OCRv6 models; recognition runs locally afterward. Skip `npm run setup:document-ocr` to use the prepared example or enter corrections manually. Documents, photographs, and decisions stay in `.data/documents/`.
+No API key is required. OCR setup downloads two pinned PP-OCRv6 models; recognition runs locally afterward. Skip `npm run setup:document-ocr` to use the prepared example or enter corrections manually. Document reviews stay in `.data/documents/`; handwritten-page transcriptions stay in `.data/transcriptions/`.
+
+The handwritten-page workflow is available in the current source checkout. The v0.1.1 release and its video show the earlier correction workflow.
 
 The [release ZIP](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest/download/paperpatch-test-build.zip) includes the compiled interface. With `uv` installed, extract it and run `./run-paperpatch.sh` from its `paperpatch` directory; Node.js is not needed. Initial setup requires internet access. Use `./run-paperpatch.sh --skip-ocr` for the prepared example. The launcher has been checked on macOS; Linux and Windows execution have not been validated.
 
@@ -42,7 +44,13 @@ The [release ZIP](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/l
 - Preserve unrelated changes and document parts. Export checks verify the approved text and that rejecting the revisions restores the original text and formatting.
 - Block export while readings, pages, marks, or overlapping corrections still need review.
 
-The working example contains prepared readings and illustrative pen marks. It exercises review, conflicts, and export without running OCR. The 1:59 demo is a continuous recording of the current app, including the actual tracked and clean Word downloads, with captions and no spoken audio. **Try a real-pen check** opens a separate capture exercise with no prepared readings.
+**Transcribe a handwritten page**
+
+- Upload a real scan or photograph directly, without an existing Word draft. The local reader detects text lines and reads their actual image crops.
+- Compare the original page and each crop with its reading. Correct mistakes, add missed text, omit false detections, and check the entire page before export.
+- Download editable Word text with the reviewed paragraph order and source line breaks. The original upload, raw OCR, and reviewed text remain available separately.
+
+The working example contains prepared readings and illustrative pen marks. It exercises review, conflicts, and export without running OCR. The original 1:59 demo records the earlier correction workflow, including tracked and clean Word downloads. **Try a real-pen check** opens a separate capture exercise with no prepared readings.
 
 ## Limits
 
@@ -52,7 +60,7 @@ In a November 17 development check using 48 human handwriting crops composited o
 
 Word files must be under 10 MB, with at most 60 body paragraphs and eight review pages. Edits are limited to ordinary text paragraphs. Tables, fields, hyperlinks, existing tracked changes, and other complex content remain protected. The review PDF reflows body text rather than reproducing the original Word layout.
 
-Photos must be JPEG, PNG, or WebP, under 20 MB and 25 megapixels, with the corner markers and print-run QR code visible. The reader targets red or blue strike-throughs and short replacements above them. Other annotations need manual review.
+Photos must be JPEG, PNG, or WebP, under 20 MB and 25 megapixels. Automatic correction capture needs the corner markers and print-run QR code; ordinary photos use manually selected handwriting regions and Word targets. Full-page transcription uses separate line detection and works best with straight, single-column pages. Small scans, cursive writing, columns, and crowded lines can require substantial correction. The reader processes at most 120 detected lines per page; review allows up to 240 lines including manual additions.
 
 PaperPatch runs locally on this computer. Transfer phone photos here before uploading; it is not a hosted multi-user service.
 
@@ -70,7 +78,9 @@ PaperPatch runs locally on this computer. Transfer phone photos here before uplo
 
 ```text
 src/DocumentApp.tsx          Document review interface
+src/TranscriptionApp.tsx     Handwritten-page review interface
 backend/documents.py        Review state, decisions, and export gates
+backend/transcription.py     Page recognition, review, and new Word documents
 backend/docx_engine.py       Word matching, tracked changes, and verification
 backend/document_capture.py Photo alignment and correction detection
 backend/document_ocr.py     Local handwriting recognition
