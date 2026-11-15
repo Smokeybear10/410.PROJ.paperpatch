@@ -370,13 +370,32 @@ def _replacement_area(regions: list[tuple[int, int, int, int]], group: dict,
         candidates.append(rect)
     if not candidates:
         return None, None
-    left = min(rect[0] for rect in candidates)
-    upper = min(rect[1] for rect in candidates)
-    lower = max(rect[1] + rect[3] for rect in candidates)
-    end = max(rect[0] + rect[2] for rect in candidates)
+
+    def contiguous(first: tuple, second: tuple) -> bool:
+        (ax, ay, aw, ah), (bx, by, _, bh) = sorted((first, second))
+        gap = bx - ax - aw
+        overlap = min(ay + ah, by + bh) - max(ay, by)
+        return 0 <= gap <= min(ah, bh) * 1.5 and overlap >= min(ah, bh) * 0.5
+
+    source_regions = set(candidates)
+    pending = list(candidates)
+    while pending:
+        anchor = pending.pop()
+        for region in regions:
+            if region not in source_regions and contiguous(anchor, region):
+                source_regions.add(region)
+                pending.append(region)
+    left = min(rect[0] for rect in source_regions)
+    upper = min(rect[1] for rect in source_regions)
+    lower = max(rect[1] + rect[3] for rect in source_regions)
+    end = max(rect[0] + rect[2] for rect in source_regions)
     rect = (left, upper, end - left, lower - upper)
-    if len(candidates) != 1:
-        return rect, 'Several ink regions are near this correction. Enter the intended replacement from the full source image.'
+    if len(source_regions) > len(candidates):
+        return rect, 'Replacement ink may continue beyond this correction. The full source is shown; enter the intended wording manually.'
+    ordered = sorted(candidates)
+    for first, second in zip(ordered, ordered[1:]):
+        if not contiguous(first, second):
+            return rect, 'Several ink regions are near this correction. Enter the intended replacement from the full source image.'
     if (upper / SCALE < previous + 1 or lower / SCALE > top - 1
             or left <= (LEFT - 14) * SCALE or end >= (RIGHT + 9) * SCALE
             or upper <= (TOP - 25) * SCALE):
