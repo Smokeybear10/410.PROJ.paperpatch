@@ -365,6 +365,11 @@
   padding: 18px;
   border: 1px solid var(--line);
 }
+.doc-app .doc-recent-more {
+  display: flex;
+  justify-content: center;
+  padding-top: 18px;
+}
 @media (max-width: 600px) {
   .doc-app .doc-recent li a {
     grid-template-columns: 20px minmax(0, 1fr) 16px;

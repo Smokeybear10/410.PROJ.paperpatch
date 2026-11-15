@@ -7,6 +7,7 @@ const reviewsSchema = z.array(z.object({
   filename: z.string(),
   currentFilename: z.string(),
   updatedAt: z.string().datetime({ offset: true }),
+  cursor: z.string().regex(/^\d{1,20}:[a-f0-9]{32}$/),
   editCount: z.number().int().nonnegative(),
   pendingCount: z.number().int().nonnegative(),
   pendingCaptures: z.number().int().nonnegative().default(0),
@@ -34,21 +35,35 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     setError(false);
-    fetch("/api/documents", { signal: controller.signal })
+    setLoading(true);
+    const url = cursor ? `/api/documents?before=${encodeURIComponent(cursor)}` : "/api/documents";
+    fetch(url, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Saved reviews could not be loaded.");
         return reviewsSchema.parse(await response.json());
       })
-      .then((value) => { if (!controller.signal.aborted) setReviews(value); })
+      .then((value) => {
+        if (controller.signal.aborted) return;
+        setReviews((current) => cursor
+          ? [...current, ...value.filter((review) => !current.some((saved) => saved.id === review.id))]
+          : value);
+        setHasOlder(value.length === 20);
+      })
       .catch(() => {
         if (!controller.signal.aborted) setError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, cursor]);
 
   if (!reviews.length && !error) return null;
 
@@ -61,18 +76,11 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
         </div>
         {reviews.length > 3 && (
           <button className="doc-text-link" onClick={() => setExpanded(!expanded)}>
-            {expanded ? "Show fewer" : `Show all ${reviews.length}`}
+            {expanded ? "Show fewer" : "Show more reviews"}
           </button>
         )}
       </div>
-      {error ? (
-        <div className="doc-recent-error" role="status">
-          <p>Saved reviews could not be loaded. Your files have not changed.</p>
-          <button className="doc-text-link" disabled={busy} onClick={() => setAttempt(attempt + 1)}>
-            <RotateCcw size={14} /> Try again
-          </button>
-        </div>
-      ) : (
+      {reviews.length > 0 && (
         <ul>
           {reviews.slice(0, expanded ? reviews.length : 3).map((review) => (
             <li key={review.id}>
@@ -97,6 +105,21 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
             </li>
           ))}
         </ul>
+      )}
+      {error && (
+        <div className="doc-recent-error" role="status">
+          <p>{reviews.length ? "Older reviews could not be loaded." : "Saved reviews could not be loaded."} Your files have not changed.</p>
+          <button className="doc-text-link" disabled={busy || loading} onClick={() => setAttempt(attempt + 1)}>
+            <RotateCcw size={14} /> Try again
+          </button>
+        </div>
+      )}
+      {expanded && hasOlder && !error && (
+        <div className="doc-recent-more">
+          <button className="doc-text-link" disabled={busy || loading} onClick={() => setCursor(reviews.at(-1)?.cursor ?? null)}>
+            {loading ? "Loading older reviews…" : "Load older reviews"}
+          </button>
+        </div>
       )}
     </section>
   );
