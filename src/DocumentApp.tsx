@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { documentError, documentRequest, DocumentRequestError } from "./document-types";
 import { DocumentCropViewer } from "./DocumentCropViewer";
+import { RecentDocumentReviews } from "./RecentDocumentReviews";
 import type {
   DocumentEdit,
   DocumentParagraph,
@@ -141,7 +142,8 @@ function Landing({
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   return (
-    <main className="doc-landing">
+    <main className="doc-landing" id="doc-main">
+      <RecentDocumentReviews busy={!!busy} />
       <div className="doc-introduction">
         <span className="doc-eyebrow">PAPER → REVIEW → WORD</span>
         <h1>
