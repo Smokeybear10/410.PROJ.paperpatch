@@ -170,13 +170,24 @@ def _find_main_document_part(zf: zipfile.ZipFile) -> str:
 
 
 def _para_text(para: ET._Element) -> str:
+    if any(node.tag in (_WNS + "del", _WNS + "moveFrom") for node in para.iterancestors()):
+        return ""
     parts: list[str] = []
-    for child in para.iter():
-        if child.tag == f"{_WNS}delText":
-            continue
-        if child.tag == f"{_WNS}t":
-            text = child.text or ""
-            parts.append(text)
+    separators = {_WNS + "tab": "\t", _WNS + "br": "\n", _WNS + "cr": "\n",
+                  _WNS + "noBreakHyphen": "-", _WNS + "softHyphen": "\u00ad"}
+
+    def visit(node: ET._Element) -> None:
+        if node is not para and node.tag in (_WNS + "p", _WNS + "del", _WNS + "moveFrom"):
+            return
+        if node.tag == _WNS + "t":
+            parts.append(node.text or "")
+        elif node.tag in separators:
+            parts.append(separators[node.tag])
+        else:
+            for child in node:
+                visit(child)
+
+    visit(para)
     return "".join(parts)
 
 
@@ -196,6 +207,8 @@ def _classify_paragraph(para: ET._Element, is_top_level: bool) -> tuple[bool, st
     for node in para.iter():
         if not isinstance(node.tag, str):
             return False, "contains unsupported XML nodes"
+        if node.tag == _WNS + "vanish" and node.get(_WNS + "val", "true").lower() not in ("0", "false", "off"):
+            return False, "contains hidden text"
         if node.tag in _PROTECT_TAGS or node.tag.endswith("Change"):
             return False, f"contains {ET.QName(node).localname}"
     if any(child.tag not in (_WNS + "pPr", _WNS + "r") for child in para):
@@ -230,6 +243,26 @@ def inspect_docx(data: bytes) -> dict:
         raise ValueError("Document XML has no <w:body> element.")
 
     warnings: list[str] = []
+    tags = {node.tag for node in body.iter() if isinstance(node.tag, str)}
+    if any(node.tag == _WNS + "vanish" and node.get(_WNS + "val", "true").lower() not in ("0", "false", "off")
+           for node in body.iter()):
+        warnings.append("Hidden text is shown for context in the review copy. Paragraphs containing it are protected; Word retains their visibility settings.")
+    if _WNS + "txbxContent" in tags:
+        warnings.append("Text box passages are shown separately as protected text. Their position and layout are not reproduced in the review copy.")
+    if _WNS + "noBreakHyphen" in tags:
+        warnings.append("Nonbreaking hyphens are shown as ordinary hyphens in the review copy. The original Word punctuation is preserved.")
+    if tags & {_WNS + name for name in ("ins", "del", "moveFrom", "moveTo")}:
+        warnings.append("Existing tracked changes remain protected. Deleted and moved-from text runs are omitted from the review copy; the original revisions stay in Word.")
+    omitted = [
+        ("Equations", {"{http://schemas.openxmlformats.org/officeDocument/2006/math}oMath"}),
+        ("Imported document passages", {_WNS + "altChunk"}),
+        ("Footnotes, endnotes and their reference markers", {_WNS + "footnoteReference", _WNS + "endnoteReference"}),
+        ("Comments and their reference markers", {_WNS + "commentReference", _WNS + "commentRangeStart"}),
+        ("Symbol-font characters", {_WNS + "sym"}),
+    ]
+    for label, content_tags in omitted:
+        if tags & content_tags:
+            warnings.append(f"{label} are not shown in the review copy. They remain unchanged in Word.")
 
     title: str | None = None
     try:
