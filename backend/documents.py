@@ -428,10 +428,15 @@ def update_current(sid: str, file: UploadFile, revision: int = Form(...)) -> dic
         session = load(sid)
         require_revision(session, revision)
         path = document_dir(sid)
+        current_path = path / 'current.docx'
+        digest = sha256(data).hexdigest()
+        if (digest == session['currentHash'] and current_path.is_file()
+                and sha256(current_path.read_bytes()).hexdigest() == digest):
+            return present(session)
         temporary = path / 'current.pending.docx'
         temporary.write_bytes(data)
-        temporary.replace(path / 'current.docx')
-        session.update(currentFilename=safe_name(file), currentHash=sha256(data).hexdigest(),
+        temporary.replace(current_path)
+        session.update(currentFilename=safe_name(file), currentHash=digest,
                        currentParagraphs=inspection['paragraphs'])
         session['warnings'] = list(dict.fromkeys(session['warnings'] + inspection.get('warnings', [])))
         for edit in session['edits']:
