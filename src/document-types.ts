@@ -125,6 +125,7 @@ export const documentSessionSchema = z.object({
   currentFilename: z.string(),
   currentHash: z.string(),
   revision: z.number().int(),
+  pendingCaptures: z.number().int().nonnegative().default(0),
   demo: z.boolean(),
   trial: z
     .object({
@@ -174,6 +175,13 @@ export type DocumentEdit = z.infer<typeof editSchema>;
 export type DocumentScan = z.infer<typeof scanSchema>;
 export type DocumentParagraph = z.infer<typeof paragraphSchema>;
 
+export class DocumentRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "DocumentRequestError";
+  }
+}
+
 export function documentError(error: unknown): string {
   if (error instanceof z.ZodError)
     return "The document response was incomplete. Reload the review before continuing.";
@@ -190,10 +198,11 @@ export async function documentRequest(
   const result: unknown = await response.json();
   if (!response.ok) {
     const detail = z.object({ detail: z.string() }).safeParse(result);
-    throw new Error(
+    throw new DocumentRequestError(
       detail.success
         ? detail.data.detail
         : `The document request failed (${response.status}).`,
+      response.status,
     );
   }
   return documentSessionSchema.parse(result);

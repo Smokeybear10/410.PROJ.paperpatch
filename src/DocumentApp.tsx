@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { z } from "zod";
 import {
@@ -22,7 +22,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { documentError, documentRequest } from "./document-types";
+import { documentError, documentRequest, DocumentRequestError } from "./document-types";
 import { DocumentCropViewer } from "./DocumentCropViewer";
 import type {
   DocumentEdit,
@@ -38,6 +38,8 @@ type Mutation = (
   body: object,
   method?: "POST" | "PATCH",
 ) => Promise<boolean>;
+
+const unsavedReadingNotice = "This browser could not save your reading. Save and confirm it, or discard the reading edit before leaving this correction.";
 
 const statusNames: Record<DocumentEdit["status"], string> = {
   ready: "Ready to review",
@@ -82,6 +84,16 @@ function writeDraft(key: string, value: string | null): void {
     /* The review still works when browser storage is unavailable. */
   }
 }
+
+const readingDraftSchema = z.object({
+  version: z.literal(2),
+  sessionId: z.string(),
+  editId: z.string(),
+  sourceIdentity: z.string(),
+  currentText: z.string(),
+  serverReplacement: z.string(),
+  text: z.string().max(2000),
+});
 
 function Mark({ small = false }: { small?: boolean }) {
   return (
@@ -803,6 +815,7 @@ function EditInspector({
   hasPrevious,
   hasNext,
   onManual,
+  onDraftProtectionChange,
 }: {
   session: DocumentSession;
   edit: DocumentEdit;
@@ -813,46 +826,85 @@ function EditInspector({
   hasPrevious: boolean;
   hasNext: boolean;
   onManual: () => void;
+  onDraftProtectionChange: (blocked: boolean) => void;
 }) {
-  const draftKey = `paperpatch-word-draft:${session.id}:${edit.id}:${JSON.stringify([edit.baseText, edit.currentText, edit.replacement])}`;
-  const [replacement, setReplacement] = useState(() =>
-    readDraft(draftKey, edit.replacement),
-  );
-  const [draftSaved, setDraftSaved] = useState(() =>
-    readDraft(draftKey, "") === replacement && replacement !== edit.replacement,
-  );
+  const draftKey = `paperpatch-word-draft:${session.id}:${edit.id}`;
+  const legacyDraftKey = `${draftKey}:${JSON.stringify([edit.baseText, edit.currentText, edit.replacement])}`;
+  const initialLegacyKey = useRef(legacyDraftKey);
+  const sourceIdentity = JSON.stringify([edit.paragraphId, edit.start, edit.end, edit.baseText, edit.scanId, edit.sourceMarkId ?? null]);
+  const [draft, setDraft] = useState<z.infer<typeof readingDraftSchema> | null>(() => {
+    try {
+      const parsed = readingDraftSchema.safeParse(JSON.parse(readDraft(draftKey, "null")));
+      if (parsed.success && parsed.data.sessionId === session.id && parsed.data.editId === edit.id && parsed.data.sourceIdentity === sourceIdentity) return parsed.data;
+    } catch { /* Older drafts were stored as plain text. */ }
+    const legacy = readDraft(legacyDraftKey, "\u0000");
+    return legacy === "\u0000" ? null : {
+      version: 2, sessionId: session.id, editId: edit.id, sourceIdentity,
+      currentText: edit.currentText, serverReplacement: edit.replacement, text: legacy,
+    };
+  });
+  const replacement = draft?.text ?? edit.replacement;
+  const [draftSaved, setDraftSaved] = useState(Boolean(draft));
   const changed = replacement !== edit.replacement;
+  const contextChanged = !!draft && (draft.currentText !== edit.currentText || draft.serverReplacement !== edit.replacement);
+  const clearDraft = () => {
+    writeDraft(draftKey, null);
+    writeDraft(initialLegacyKey.current, null);
+    setDraft(null);
+    setDraftSaved(false);
+    onDraftProtectionChange(false);
+  };
   const updateReplacement = (value: string) => {
-    setReplacement(value);
-    writeDraft(draftKey, value);
-    setDraftSaved(readDraft(draftKey, "\u0000") === value);
+    const next = {
+      ...(draft ?? { version: 2 as const, sessionId: session.id, editId: edit.id, sourceIdentity,
+        currentText: edit.currentText, serverReplacement: edit.replacement }),
+      text: value,
+    };
+    setDraft(next);
+    const serialized = JSON.stringify(next);
+    writeDraft(draftKey, serialized);
+    const saved = readDraft(draftKey, "") === serialized;
+    setDraftSaved(saved);
+    onDraftProtectionChange((value !== edit.replacement || contextChanged) && !saved);
   };
   useEffect(() => {
-    if (!changed || draftSaved) return;
+    if (!draft) return;
+    const serialized = JSON.stringify(draft);
+    writeDraft(draftKey, serialized);
+    const saved = readDraft(draftKey, "") === serialized;
+    setDraftSaved(saved);
+    if (saved) writeDraft(initialLegacyKey.current, null);
+  }, [draftKey, draft]);
+  useEffect(() => {
+    onDraftProtectionChange((changed || contextChanged) && !draftSaved);
+    return () => onDraftProtectionChange(false);
+  }, [changed, contextChanged, draftSaved, onDraftProtectionChange]);
+  useEffect(() => {
+    if ((!changed && !contextChanged) || draftSaved) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [changed, draftSaved]);
+  }, [changed, contextChanged, draftSaved]);
   const missingReading = edit.kind === "replace" && !replacement.trim();
   const canApply =
     ["ready", "conflict"].includes(edit.status) &&
     edit.currentParagraphId !== null &&
     edit.currentStart !== null &&
     edit.currentEnd !== null;
-  const confirmed = edit.confirmed && !changed;
+  const confirmed = edit.confirmed && !changed && !contextChanged;
   const index = session.edits.findIndex((item) => item.id === edit.id);
   const patch = async (body: object) =>
     mutate(`/edits/${edit.id}`, body, "PATCH");
   const confirm = async () => {
     if (await patch({ replacement, confirmed: true }))
-      writeDraft(draftKey, null);
+      clearDraft();
   };
   const confirmAndApply = async () => {
     if (await patch({ replacement, confirmed: true, decision: "paper" }))
-      writeDraft(draftKey, null);
+      clearDraft();
   };
   const alternatives = [...new Set(edit.ocrAlternatives ?? [])]
     .filter((value) => value.trim() && value !== edit.ocrText)
@@ -993,16 +1045,13 @@ function EditInspector({
           ))}</div>
         </div>
       )}
-      {changed && (
+      {(changed || contextChanged) && (
         <div className="doc-reading-draft" role="status">
+          {contextChanged && <p>The latest passage or saved reading changed. Your draft is retained below; compare it with the latest text before confirming.</p>}
           <p>{draftSaved
             ? "Reading saved in this browser. Confirm it to add it to the review."
             : "This browser could not save your draft. Confirm the reading before leaving this correction."}</p>
-          <button type="button" className="doc-text-link" disabled={busy} onClick={() => {
-            writeDraft(draftKey, null);
-            setReplacement(edit.replacement);
-            setDraftSaved(false);
-          }}>Discard reading edit</button>
+          <button type="button" className="doc-text-link" disabled={busy} onClick={clearDraft}>Discard reading edit</button>
         </div>
       )}
       {!edit.decision && (
@@ -1094,6 +1143,9 @@ function ManualDialog({
   initialScanId,
   initialReviewer,
   initialMarkId,
+  requestError,
+  reloadNeeded,
+  reloadReview,
 }: {
   session: DocumentSession;
   busy: boolean;
@@ -1102,6 +1154,9 @@ function ManualDialog({
   initialScanId: string;
   initialReviewer: string;
   initialMarkId?: string | null;
+  requestError: string | null;
+  reloadNeeded: boolean;
+  reloadReview: () => void;
 }) {
   const draftSchema = z.object({
     version: z.literal(1),
@@ -1139,6 +1194,7 @@ function ManualDialog({
   const [draftSaved, setDraftSaved] = useState(Boolean(storedDraft));
   const [closeBlocked, setCloseBlocked] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  useEffect(() => { setSaveFailed(false); }, [session.revision]);
   const sourceScan = session.scans.find((item) => item.id === scanId);
   const sourceMark = sourceScan?.marks?.find(
     (item) => item.id === initialMarkId,
@@ -1239,6 +1295,7 @@ function ManualDialog({
   }, []);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (submitting.current || busy) return;
     const start = matches[occurrence];
     if (start === undefined || !paragraph || !passageMatchesDraft) return;
     const end = start + Array.from(target).length;
@@ -1361,6 +1418,7 @@ function ManualDialog({
           className="doc-manual-passage"
           rows={4}
           readOnly
+          disabled={busy}
           value={passage?.text ?? ""}
           aria-describedby="doc-selection-help"
           onSelect={(event) => {
@@ -1384,6 +1442,7 @@ function ManualDialog({
           Exact words to change or insert beside
           <input
             value={target}
+            disabled={busy}
             onChange={(event) => {
               if (passage) setPassageKey(passage.key);
               setTarget(event.target.value);
@@ -1404,6 +1463,7 @@ function ManualDialog({
             Which occurrence?
             <select
               value={occurrence}
+              disabled={busy}
               onChange={(event) => setOccurrence(Number(event.target.value))}
             >
               {matches.map((start, index) => (
@@ -1419,6 +1479,7 @@ function ManualDialog({
             Action
             <select
               value={operation}
+              disabled={busy}
               onChange={(event) => setOperation(event.target.value)}
             >
               <option value="replace">Replace these words</option>
@@ -1431,6 +1492,7 @@ function ManualDialog({
             Reviewer
             <input
               value={reviewer}
+              disabled={busy}
               onChange={(event) => setReviewer(event.target.value)}
               maxLength={80}
               required
@@ -1442,6 +1504,7 @@ function ManualDialog({
             New text
             <textarea
               rows={3}
+              disabled={busy}
               value={replacement}
               maxLength={2000}
               onChange={(event) => setReplacement(event.target.value)}
@@ -1478,7 +1541,10 @@ function ManualDialog({
             <button type="button" className="doc-text-link" disabled={busy} onClick={discard}>Discard draft</button>
           </div>
         )}
-        {saveFailed && <p className="doc-field-error" role="alert">The correction could not be saved. Your draft is still here; check the selected passage and try again.</p>}
+        {(saveFailed || reloadNeeded) && <div className="doc-field-error" role="alert">
+          <p>{requestError ?? "The correction could not be saved."} Your draft is still here.</p>
+          {reloadNeeded && <button type="button" className="doc-text-link" disabled={busy} onClick={reloadReview}>Reload latest review</button>}
+        </div>}
         <footer>
           <button
             type="button"
@@ -1573,11 +1639,15 @@ function ExportStage({
   busy,
   exportDocument,
   review,
+  refresh,
+  refreshRequired,
 }: {
   session: DocumentSession;
   busy: boolean;
   exportDocument: () => void;
   review: () => void;
+  refresh: () => void;
+  refreshRequired: boolean;
 }) {
   const accepted = session.edits.filter((edit) => edit.decision === "paper");
   const pending = session.edits.filter((edit) => edit.decision === null);
@@ -1587,7 +1657,7 @@ function ExportStage({
       count + (scan.marks?.filter((mark) => !mark.resolution).length ?? 0),
     0,
   );
-  const result = session.export;
+  const result = session.pendingCaptures > 0 ? null : session.export;
   return (
     <div className="doc-export-layout">
       <div>
@@ -1673,7 +1743,16 @@ function ExportStage({
           </div>
         ) : (
           <div className="doc-export-gate">
-            {pending.length > 0 ||
+            {session.pendingCaptures > 0 ? (
+              <>
+                <LoaderCircle className="doc-spin" size={19} />
+                <div>
+                  <b>Wait for the photographs to finish</b>
+                  <p>{session.pendingCaptures} photograph{session.pendingCaptures === 1 ? " is" : "s are"} still being processed. This review refreshes automatically. Check the resulting marks before exporting.</p>
+                  <button className="doc-text-link" disabled={busy} onClick={refresh}>Refresh review <RotateCcw size={15} /></button>
+                </div>
+              </>
+            ) : pending.length > 0 ||
             unchecked.length > 0 ||
             unresolvedMarks > 0 ? (
               <>
@@ -1685,10 +1764,10 @@ function ExportStage({
                       ? `${unresolvedMarks} detected pen mark${unresolvedMarks === 1 ? " still needs" : "s still need"} to be accounted for. `
                       : ""}
                     {pending.length > 0
-                      ? `${pending.length} correction${pending.length === 1 ? "" : "s"} still need a decision. `
+                      ? `${pending.length} correction${pending.length === 1 ? " still needs" : "s still need"} a decision. `
                       : ""}
                     {unchecked.length > 0
-                      ? `${unchecked.length} source page${unchecked.length === 1 ? "" : "s"} still need checking.`
+                      ? `${unchecked.length} source page${unchecked.length === 1 ? " still needs" : "s still need"} checking.`
                       : ""}
                   </p>
                   <button className="doc-text-link" onClick={review}>
@@ -1733,6 +1812,8 @@ function ExportStage({
             className="doc-button primary doc-export-primary"
             disabled={
               busy ||
+              refreshRequired ||
+              session.pendingCaptures > 0 ||
               pending.length > 0 ||
               unchecked.length > 0 ||
               unresolvedMarks > 0 ||
@@ -1760,6 +1841,8 @@ export default function DocumentApp() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [reloadNeeded, setReloadNeeded] = useState(false);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [source, setSource] = useState("page:1");
   const [manual, setManual] = useState(false);
@@ -1769,37 +1852,55 @@ export default function DocumentApp() {
   const [filter, setFilter] = useState<"all" | "pending" | "conflicts">("all");
   const currentInput = useRef<HTMLInputElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
-  const mounted = useRef(true);
+  const mounted = useRef(false);
+  const requestVersion = useRef(0);
+  const inFlight = useRef(false);
+  const unpersistedReading = useRef(false);
+  const protectReading = useCallback((blocked: boolean) => {
+    unpersistedReading.current = blocked;
+    if (!blocked) setNotice((value) => value === unsavedReadingNotice ? null : value);
+  }, []);
+  const canLeaveReading = () => {
+    if (!unpersistedReading.current) return true;
+    setNotice(unsavedReadingNotice);
+    return false;
+  };
+  const changeStage = (value: Stage) => {
+    if (value === stage || canLeaveReading()) setStage(value);
+  };
 
   useEffect(() => {
     mounted.current = true;
+    const controller = new AbortController();
     const id = new URLSearchParams(location.search).get("document");
-    if (!id) return;
-    setBusy("loading");
-    documentRequest(`/api/documents/${encodeURIComponent(id)}`)
-      .then((value) => {
-        if (!mounted.current) return;
-        setSession(value);
-        setStage(
-          value.export
-            ? "export"
-            : value.edits.length || value.scans.length
-              ? "review"
-              : "prepare",
-        );
-        const edit =
-          value.edits.find((item) => !item.decision) ?? value.edits[0];
-        setSelectedId(edit?.id ?? null);
-        setSource(edit?.scanId ?? value.scans.at(-1)?.id ?? "page:1");
-      })
-      .catch((cause) => {
-        if (mounted.current) setError(documentError(cause));
-      })
-      .finally(() => {
-        if (mounted.current) setBusy(null);
-      });
+    if (id) {
+      const version = ++requestVersion.current;
+      inFlight.current = true;
+      setBusy("loading");
+      documentRequest(`/api/documents/${encodeURIComponent(id)}`, { signal: controller.signal })
+        .then((value) => {
+          if (!mounted.current || version !== requestVersion.current) return;
+          setSession(value);
+          setStage(value.export ? "export" : value.edits.length || value.scans.length ? "review" : "prepare");
+          const edit = value.edits.find((item) => !item.decision) ?? value.edits[0];
+          setSelectedId(edit?.id ?? null);
+          setSource(edit?.scanId ?? value.scans.at(-1)?.id ?? "page:1");
+        })
+        .catch((cause) => {
+          if (mounted.current && version === requestVersion.current) setError(documentError(cause));
+        })
+        .finally(() => {
+          if (mounted.current && version === requestVersion.current) {
+            inFlight.current = false;
+            setBusy(null);
+          }
+        });
+    }
     return () => {
       mounted.current = false;
+      inFlight.current = false;
+      requestVersion.current += 1;
+      controller.abort();
     };
   }, []);
 
@@ -1810,49 +1911,74 @@ export default function DocumentApp() {
     url.searchParams.set("document", value.id);
     history.replaceState(null, "", url);
   };
-  const start = async (file?: File, trial = false) => {
-    setBusy(file ? "upload" : trial ? "trial" : "example");
+  const perform = async (
+    label: string,
+    request: () => Promise<DocumentSession>,
+    onSuccess?: (value: DocumentSession) => void,
+  ): Promise<boolean> => {
+    if (inFlight.current || !mounted.current) return false;
+    const version = ++requestVersion.current;
+    inFlight.current = true;
+    setBusy(label);
     setError(null);
     setNotice(null);
+    setReloadNeeded(false);
     try {
-      const form = new FormData();
-      if (file) form.append("file", file);
-      const value = await documentRequest(
-        file
-          ? "/api/documents"
-          : trial
-            ? "/api/documents/trial"
-            : "/api/documents/example",
-        { method: "POST", ...(file ? { body: form } : {}) },
-      );
+      const value = await request();
+      if (!mounted.current || version !== requestVersion.current) return false;
       adopt(value);
+      setRefreshWarning(null);
+      onSuccess?.(value);
+      return true;
+    } catch (cause) {
+      if (mounted.current && version === requestVersion.current) {
+        setError(documentError(cause));
+        setReloadNeeded(cause instanceof DocumentRequestError && cause.status === 409);
+      }
+      return false;
+    } finally {
+      if (mounted.current && version === requestVersion.current) {
+        inFlight.current = false;
+        setBusy(null);
+      }
+    }
+  };
+  const start = async (file?: File, trial = false) => {
+    if (!canLeaveReading()) return;
+    const form = new FormData();
+    if (file) form.append("file", file);
+    await perform(file ? "upload" : trial ? "trial" : "example", () => documentRequest(
+      file ? "/api/documents" : trial ? "/api/documents/trial" : "/api/documents/example",
+      { method: "POST", ...(file ? { body: form } : {}) },
+    ), (value) => {
       setStage(file || trial ? "prepare" : "review");
       setPhysicalCapture(false);
       setFilter("all");
+      setManual(false);
+      setManualMarkId(null);
       const edit = value.edits[0];
       setSelectedId(edit?.id ?? null);
       setSource(edit?.scanId ?? "page:1");
-    } catch (cause) {
-      setError(documentError(cause));
-    } finally {
-      setBusy(null);
-    }
+    });
+  };
+  const reloadReview = async () => {
+    if (!session) return;
+    await perform("reload", () => documentRequest(`/api/documents/${session.id}`), (value) => {
+      if (!value.edits.some((edit) => edit.id === selectedId)) {
+        const edit = value.edits.find((item) => !item.decision) ?? value.edits[0];
+        setSelectedId(edit?.id ?? null);
+      }
+      if (!source.startsWith("page:") && !value.scans.some((scan) => scan.id === source)) setSource("page:1");
+      setNotice("Latest review loaded. Your reading drafts are retained; check the updated passages before saving.");
+    });
   };
   const mutate: Mutation = async (path, body, method = "POST") => {
-    if (!session || busy) return false;
-    setBusy(path);
-    setError(null);
-    setNotice(null);
-    try {
-      const value = await documentRequest(
-        `/api/documents/${session.id}${path}`,
-        {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, revision: session.revision }),
-        },
-      );
-      adopt(value);
+    if (!session) return false;
+    return perform(path, () => documentRequest(`/api/documents/${session.id}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, revision: session.revision }),
+    }), (value) => {
       if (path === "/edits") {
         const added = value.edits.at(-1);
         if (added) {
@@ -1860,77 +1986,80 @@ export default function DocumentApp() {
           setSource(added.scanId ?? `page:${added.page ?? 1}`);
         }
       }
-      return true;
-    } catch (cause) {
-      setError(documentError(cause));
-      return false;
-    } finally {
-      setBusy(null);
-    }
+    });
   };
   const uploadCurrent = async (file: File) => {
-    if (!session || busy) return;
-    setBusy("current");
-    setError(null);
-    setNotice(null);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("revision", String(session.revision));
-      const value = await documentRequest(
-        `/api/documents/${session.id}/current`,
-        { method: "POST", body: form },
-      );
-      adopt(value);
-      setNotice(
-        "Latest draft loaded. Review the updated matches and decisions before exporting.",
-      );
+    if (!session || !canLeaveReading()) return;
+    const form = new FormData();
+    form.append("file", file);
+    form.append("revision", String(session.revision));
+    await perform("current", () => documentRequest(`/api/documents/${session.id}/current`, { method: "POST", body: form }), () => {
+      setNotice("Latest draft loaded. Review the updated matches and decisions before exporting.");
       setStage("review");
-    } catch (cause) {
-      setError(documentError(cause));
-    } finally {
-      setBusy(null);
-    }
+    });
   };
   const uploadPhoto = async (file: File) => {
-    if (!session || busy) return;
-    setBusy("photo");
-    setError(null);
-    setNotice(null);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("reviewer", reviewer.trim() || "Reviewer");
-      form.append("captureKind", physicalCapture ? "physical" : "unspecified");
-      const value = await documentRequest(
-        `/api/documents/${session.id}/scans`,
-        { method: "POST", body: form },
-      );
-      adopt(value);
+    if (!session || !canLeaveReading()) return;
+    const form = new FormData();
+    form.append("file", file);
+    form.append("reviewer", reviewer.trim() || "Reviewer");
+    form.append("captureKind", physicalCapture ? "physical" : "unspecified");
+    await perform("photo", () => documentRequest(`/api/documents/${session.id}/scans`, { method: "POST", body: form }), (value) => {
       const scan = value.scans.at(-1);
       const edit = value.edits.find((item) => item.scanId === scan?.id);
       setSource(scan?.id ?? source);
       setSelectedId(edit?.id ?? null);
       setStage("review");
       const marks = scan?.marks?.filter((mark) => !mark.resolution).length ?? 0;
-      setNotice(
-        edit
-          ? "Photo processed. Check every suggested correction and inspect the full page for missed writing."
-          : marks
-            ? `${marks} pen-mark ${marks === 1 ? "region needs" : "regions need"} your reading. Enter the intended correction, or mark an annotation as not changing the text.`
-            : "No corrections were detected on this photo. Inspect the source and enter missed marks manually, or try a clearer photograph.",
-      );
-    } catch (cause) {
-      setError(documentError(cause));
-    } finally {
-      setBusy(null);
-    }
+      setNotice(edit
+        ? "Photo processed. Check every suggested correction and inspect the full page for missed writing."
+        : marks
+          ? `${marks} pen-mark ${marks === 1 ? "region needs" : "regions need"} your reading. Enter the intended correction, or mark an annotation as not changing the text.`
+          : "No corrections were detected on this photo. Inspect the source and enter missed marks manually, or try a clearer photograph.");
+    });
   };
+
+  useEffect(() => {
+    if (!session || reloadNeeded) return;
+    const sessionId = session.id;
+    let stopped = false;
+    let polling = false;
+    let controller: AbortController | null = null;
+    const refresh = async () => {
+      if (stopped || polling || inFlight.current || document.visibilityState === "hidden") return;
+      polling = true;
+      controller = new AbortController();
+      const version = requestVersion.current;
+      try {
+        const value = await documentRequest(`/api/documents/${sessionId}`, { signal: controller.signal });
+        if (stopped || !mounted.current || inFlight.current || version !== requestVersion.current) return;
+        setSession((current) => current?.id === sessionId && value.revision >= current.revision ? value : current);
+        setRefreshWarning(null);
+      } catch {
+        if (!stopped && mounted.current && version === requestVersion.current) setRefreshWarning("The latest review could not be refreshed. Reload it before exporting.");
+      } finally {
+        polling = false;
+      }
+    };
+    const interval = window.setInterval(refresh, session.pendingCaptures > 0 || stage === "export" ? 2000 : 5000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    if (stage === "export") void refresh();
+    return () => {
+      stopped = true;
+      controller?.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [session?.id, session?.pendingCaptures, stage, reloadNeeded]);
   const selected =
     session?.edits.find((edit) => edit.id === selectedId) ?? null;
   const activeScan = session?.scans.find((scan) => scan.id === source);
   const unresolvedMark = activeScan?.marks?.find((mark) => !mark.resolution);
   const openManual = (markId?: string) => {
+    if (!canLeaveReading()) return;
     setManualMarkId(markId ?? null);
     setManual(true);
   };
@@ -1941,6 +2070,7 @@ export default function DocumentApp() {
     editId?: string,
   ) => mutate(`/scans/${scanId}/marks/${markId}`, { resolution, ...(editId ? { editId } : {}) }, "PATCH");
   const selectEdit = (edit: DocumentEdit) => {
+    if (edit.id !== selectedId && !canLeaveReading()) return;
     setSelectedId(edit.id);
     setSource(edit.scanId ?? `page:${edit.page ?? 1}`);
   };
@@ -1948,6 +2078,7 @@ export default function DocumentApp() {
     const edits =
       session?.edits.filter((edit) => edit.scanId === nextSource) ?? [];
     const edit = edits.find((item) => item.decision === null) ?? edits[0];
+    if (edit?.id !== selectedId && !canLeaveReading()) return;
     setSource(nextSource);
     setSelectedId(edit?.id ?? null);
   };
@@ -1978,7 +2109,7 @@ export default function DocumentApp() {
         Skip to document
       </a>
       <header className="doc-header">
-        <a className="doc-brand" href="/?mode=documents">
+        <a className="doc-brand" href="/?mode=documents" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>
           <Mark />
           <span>
             PaperPatch<span className="doc-brand-period">.</span>
@@ -1995,7 +2126,7 @@ export default function DocumentApp() {
             <span>THE PAPER IS STILL PART OF THE DOCUMENT.</span>
           )}
         </div>
-        <a className="doc-legacy-link" href="/?mode=workbooks">
+        <a className="doc-legacy-link" href="/?mode=workbooks" onClick={(event) => { if (!canLeaveReading()) event.preventDefault(); }}>
           Spreadsheet tool <ArrowRight size={14} />
         </a>
       </header>
@@ -2003,9 +2134,22 @@ export default function DocumentApp() {
         <div className="doc-message error" role="alert">
           <CircleAlert size={18} />
           <span>{error}</span>
-          <button aria-label="Dismiss error" onClick={() => setError(null)}>
+          {reloadNeeded && session && <button className="doc-text-link" disabled={!!busy} onClick={reloadReview}>Reload latest review</button>}
+          <button aria-label="Dismiss error" onClick={() => { setError(null); setReloadNeeded(false); }}>
             <X size={17} />
           </button>
+        </div>
+      )}
+      {refreshWarning && (
+        <div className="doc-message error" role="alert">
+          <CircleAlert size={18} /><span>{refreshWarning}</span>
+          <button className="doc-text-link" disabled={!!busy} onClick={reloadReview}>Reload latest review</button>
+        </div>
+      )}
+      {!!session?.pendingCaptures && stage !== "export" && (
+        <div className="doc-message notice" role="status">
+          <LoaderCircle className="doc-spin" size={17} />
+          <span>{session.pendingCaptures} photograph{session.pendingCaptures === 1 ? " is" : "s are"} still being processed. This review refreshes automatically.</span>
         </div>
       )}
       {notice && (
@@ -2022,7 +2166,7 @@ export default function DocumentApp() {
           <LoaderCircle className="doc-spin" size={16} />
           {busy === "photo"
             ? "Aligning the page and reading colored pen marks. This may take a minute…"
-            : busy === "loading"
+            : busy === "loading" || busy === "reload"
               ? "Opening your document review…"
               : busy === "current"
                 ? "Matching corrections to the latest draft…"
@@ -2061,7 +2205,7 @@ export default function DocumentApp() {
                   key={value}
                   aria-current={stage === value ? "step" : undefined}
                   className={stage === value ? "active" : ""}
-                  onClick={() => setStage(value)}
+                  onClick={() => changeStage(value)}
                 >
                   <span>{number}</span>
                   {label}
@@ -2433,7 +2577,7 @@ export default function DocumentApp() {
                   </div>
                   <button
                     className="doc-rail-export"
-                    onClick={() => setStage("export")}
+                    onClick={() => changeStage("export")}
                   >
                     Preview Word changes <ArrowRight size={16} />
                   </button>
@@ -2451,7 +2595,7 @@ export default function DocumentApp() {
                 />
                 {selected ? (
                   <EditInspector
-                    key={`${selected.id}:${selected.replacement}:${selected.currentText}`}
+                    key={`${session.id}:${selected.id}`}
                     session={session}
                     edit={selected}
                     busy={!!busy}
@@ -2461,6 +2605,7 @@ export default function DocumentApp() {
                     previous={() => previousEdit && selectEdit(previousEdit)}
                     next={() => nextEdit && selectEdit(nextEdit)}
                     onManual={openManual}
+                    onDraftProtectionChange={protectReading}
                   />
                 ) : (
                   <aside className="doc-inspector doc-inspector-empty">
@@ -2496,7 +2641,7 @@ export default function DocumentApp() {
                           ? start(undefined, true)
                           : activeScan
                             ? photoInput.current?.click()
-                            : setStage("prepare")
+                            : changeStage("prepare")
                       }
                     >
                       {activeScan ? (
@@ -2519,7 +2664,9 @@ export default function DocumentApp() {
             <ExportStage
               session={session}
               busy={!!busy}
-              review={() => setStage("review")}
+              refreshRequired={!!refreshWarning || reloadNeeded}
+              review={() => changeStage("review")}
+              refresh={reloadReview}
               exportDocument={() =>
                 mutate("/export", { currentHash: session.currentHash })
               }
@@ -2538,6 +2685,9 @@ export default function DocumentApp() {
               initialScanId={activeScan?.id ?? ""}
               initialReviewer={activeScan?.reviewer ?? reviewer}
               initialMarkId={manualMarkId}
+              requestError={error}
+              reloadNeeded={reloadNeeded}
+              reloadReview={reloadReview}
             />
           )}
         </main>
