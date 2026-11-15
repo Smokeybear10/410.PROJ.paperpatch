@@ -393,11 +393,14 @@ def _ocr(mask: np.ndarray, rect: tuple[int, int, int, int],
         with OCR_LOCK:
             reading = recognize_handwriting_candidates(image)
             text = reading['text']
+            alternatives = [value for value in reading['alternatives']
+                            if value != text and _usable_transcription(value, True)][:1]
             if _usable_transcription(text, True):
-                alternatives = [value for value in reading['alternatives']
-                                if value != text and _usable_transcription(value, True)][:1]
                 return text, alternatives, reading['warning']
-            return "", [], "Some replacement handwriting could not be read. Enter the wording from its source image."
+            warning = "The primary handwriting reading was empty or unusable. Check any other machine reading against the source, or enter the wording manually."
+            if reading['warning']:
+                warning += " " + reading['warning']
+            return "", alternatives, warning
     except (ImportError, OSError, RuntimeError, ValueError):
         return "", [], "Local handwriting recognition is unavailable. The detected marks are kept; enter their wording during review."
 
