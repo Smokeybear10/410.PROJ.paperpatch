@@ -52,11 +52,19 @@ const statusNames: Record<DocumentEdit["status"], string> = {
 };
 
 function editLabel(edit: DocumentEdit): string {
+  if (edit.decision === "paper" && edit.status === "already_applied") return "Already in draft";
   if (edit.decision === "paper") return "Use paper";
   if (edit.decision === "current") return "Keep draft";
   if (edit.status === "already_applied") return "Already applied";
   if (!edit.confirmed && edit.status === "ready") return "Check reading";
   return statusNames[edit.status];
+}
+
+function isExportableEdit(edit: DocumentEdit): boolean {
+  return edit.decision === "paper" && edit.confirmed &&
+    (edit.status === "ready" || edit.status === "conflict") &&
+    edit.currentParagraphId !== null && edit.currentStart !== null &&
+    edit.currentEnd !== null && edit.currentStart >= 0 && edit.currentEnd >= edit.currentStart;
 }
 
 function editAction(edit: DocumentEdit): string {
@@ -1072,16 +1080,25 @@ function EditInspector({
       )}
       {edit.decision ? (
         <div className="doc-decision-saved">
-          <CheckCheck size={20} />
+          {edit.decision === "paper" && edit.status !== "already_applied" && !isExportableEdit(edit)
+            ? <CircleAlert size={20} /> : <CheckCheck size={20} />}
           <div>
             <b>
               {edit.decision === "paper"
-                ? "Paper correction selected"
+                ? edit.status === "already_applied"
+                  ? "Already in the latest draft"
+                  : isExportableEdit(edit)
+                    ? "Paper correction selected"
+                    : "Selected correction needs attention"
                 : "Latest draft kept"}
             </b>
             <p>
               {edit.decision === "paper"
-                ? "It will be included as a tracked change."
+                ? edit.status === "already_applied"
+                  ? "This reading is already present. It will not create a tracked change."
+                  : isExportableEdit(edit)
+                    ? "It will be included as a tracked change."
+                    : "Resolve its reading or target before exporting."
                 : "This paper suggestion will not change the draft."}
             </p>
           </div>
@@ -1571,11 +1588,12 @@ function ManualDialog({
 }
 
 function DraftPreview({ session }: { session: DocumentSession }) {
+  const applicable = session.edits.filter(isExportableEdit);
+  const hasBlockedSelection = session.edits.some((edit) => edit.decision === "paper" && edit.status !== "already_applied" && !isExportableEdit(edit));
   function paragraphContent(paragraph: DocumentParagraph) {
-    const edits = session.edits
+    const edits = applicable
       .filter(
         (edit) =>
-          edit.decision === "paper" &&
           edit.currentParagraphId === paragraph.id &&
           edit.currentStart !== null &&
           edit.currentEnd !== null,
@@ -1629,6 +1647,7 @@ function DraftPreview({ session }: { session: DocumentSession }) {
           )}
       </div>
       <p className="doc-fine-print">
+        {hasBlockedSelection && "Selected corrections that still need attention are not shown as changes. "}
         Text preview. The Word export retains the current document’s supported
         formatting.
       </p>
@@ -1651,7 +1670,9 @@ function ExportStage({
   refresh: () => void;
   refreshRequired: boolean;
 }) {
-  const accepted = session.edits.filter((edit) => edit.decision === "paper");
+  const accepted = session.edits.filter(isExportableEdit);
+  const alreadyPresent = session.edits.filter((edit) => edit.decision === "paper" && edit.status === "already_applied");
+  const blocked = session.edits.filter((edit) => edit.decision === "paper" && edit.status !== "already_applied" && !isExportableEdit(edit));
   const pending = session.edits.filter((edit) => edit.decision === null);
   const unchecked = session.scans.filter((scan) => !scan.reviewed);
   const unresolvedMarks = session.scans.reduce(
@@ -1659,7 +1680,7 @@ function ExportStage({
       count + (scan.marks?.filter((mark) => !mark.resolution).length ?? 0),
     0,
   );
-  const result = session.pendingCaptures > 0 ? null : session.export;
+  const result = session.pendingCaptures > 0 || blocked.length > 0 || pending.length > 0 || unchecked.length > 0 || unresolvedMarks > 0 ? null : session.export;
   return (
     <div className="doc-export-layout">
       <div>
@@ -1673,10 +1694,11 @@ function ExportStage({
           Download an editable Word file with genuine tracked changes. Accept or
           reject them in your word processor.
         </p>
-        <div className="doc-export-counts">
+        <div className={`doc-export-counts ${alreadyPresent.length ? "has-already-present" : ""}`}>
           <span>
-            <b>{accepted.length}</b> paper corrections
+            <b>{accepted.length}</b> paper change{accepted.length === 1 ? "" : "s"}
           </span>
+          {alreadyPresent.length > 0 && <span><b>{alreadyPresent.length}</b> already in the latest draft</span>}
           <span>
             <b>
               {
@@ -1755,6 +1777,7 @@ function ExportStage({
                 </div>
               </>
             ) : pending.length > 0 ||
+            blocked.length > 0 ||
             unchecked.length > 0 ||
             unresolvedMarks > 0 ? (
               <>
@@ -1767,6 +1790,9 @@ function ExportStage({
                       : ""}
                     {pending.length > 0
                       ? `${pending.length} correction${pending.length === 1 ? " still needs" : "s still need"} a decision. `
+                      : ""}
+                    {blocked.length > 0
+                      ? `${blocked.length} selected paper correction${blocked.length === 1 ? " still needs" : "s still need"} a confirmed reading or a safe target. `
                       : ""}
                     {unchecked.length > 0
                       ? `${unchecked.length} source page${unchecked.length === 1 ? " still needs" : "s still need"} checking.`
@@ -1792,10 +1818,11 @@ function ExportStage({
               <>
                 <FileText size={20} />
                 <div>
-                  <b>No paper changes selected</b>
+                  <b>{alreadyPresent.length ? "Selected text is already in the draft" : "No paper changes selected"}</b>
                   <p>
-                    Your latest draft can stay as it is. Add or accept a
-                    correction to create a revised file.
+                    {alreadyPresent.length
+                      ? "No new tracked changes are needed for these readings. Download the latest draft as it is."
+                      : "Your latest draft can stay as it is. Add or accept a correction to create a revised file."}
                   </p>
                   <a
                     href={session.currentUrl}
@@ -1817,6 +1844,7 @@ function ExportStage({
               refreshRequired ||
               session.pendingCaptures > 0 ||
               pending.length > 0 ||
+              blocked.length > 0 ||
               unchecked.length > 0 ||
               unresolvedMarks > 0 ||
               !accepted.length
