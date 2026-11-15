@@ -1,0 +1,91 @@
+[INFO] [KRS] <-- GenerateAssistantResponseCommand done totalEvents=8
+Let me read the design documents and existing code first.
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Directory
+[tool] status: InProgress
+[tool] status: Completed
+Now let me read the spec files:
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+Now I have a thorough understanding of the codebase. Let me write `backend/verification.py`:
+[tool] Write File
+[tool] status: Pending
+[tool] status: Completed
+Now let me verify the file is importable and structurally correct by checking for any obvious issues:
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Code Intelligence
+[tool] status: Completed
+Let me do a quick sanity check on a few key aspects — the `re` and `io` imports are used only in workbook.py so I should clean up unused imports:
+[tool] Replace in File
+[tool] status: Pending
+[tool] status: Completed
+Now let me do one final read of the complete file to confirm it is correct end-to-end:
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read File
+[tool] status: InProgress
+[tool] status: Completed
+The file is complete and correct. Here's what was implemented and an honest assessment of limitations:
+
+---
+
+## Implemented: `backend/verification.py`
+
+### `verify_export(current, output, sheet, id_column, editable_columns, patches) -> dict`
+
+The function is an independent, end-to-end verifier with no calls to `patch_workbook`. It proceeds in this order:
+
+1. **SHA-256 hashes** — computed on raw input bytes before anything else.
+2. **Both ZIPs opened** via the existing `_open_zip` (bounded, deduplicated, no encryption).
+3. **Workbook path consistency** — `_find_workbook_part` run independently on both; path must not change.
+4. **Worksheet path resolution** — via `_parse_rels` on the current workbook, using the sheet name.
+5. **Patch allowlist validation** (`_validate_patches`) — calls `read_table` on `current` to build an authoritative `(rowId, field) → cell` map; rejects unknowns, duplicates, protected targets, bad kinds/values, two patches mapping to the same address.
+6. **ZIP membership** (`_verify_zip_membership`) — exact name-set equality (no added/removed/duplicates); every entry except `ws_path` and `wb_path` must be decompressed byte-identical. Returns `(unchangedPartCount, totalPartCount)`.
+7. **Workbook XML** (`_verify_workbook_xml`) — parses both trees; non-`<calcPr>` children must be semantically identical (same tag, attributes, text, child order, recursively). `<calcPr>` may add/update only `calcMode='auto'`, `forceFullCalc='1'`, `fullCalcOnLoad='1'`; all existing non-allowlisted attributes preserved; removal of existing `<calcPr>` is rejected.
+8. **Worksheet XML** (`_verify_worksheet`) — full semantic comparison:
+   - Root element tag/attributes must match.
+   - Non-`<sheetData>` siblings must be recursively identical.
+   - Row attributes (spans, ht, etc.) must not change.
+   - Non-cell row children (extLst, etc.) recursively identical.
+   - Existing cells cannot be removed; existing cell order preserved.
+   - Non-target cells: fully recursive attribute/child/text equality, plus explicit formula-change guard.
+   - Target cells: `r` coordinate and `s` style preserved; only `t` and `<v>`/`<is>` children may change; non-value children identical; no formula introduced/changed/deleted; actual value read back via `_cell_kind_value` and compared to patch value (Decimal comparison for numbers, exact string for text).
+   - New cells inserted for previously-absent targets: validated as targets.
+9. **Formula count** — counts `<f>` nodes across output target worksheet plus all other worksheets (from current, already proven byte-identical).
+10. **Return** `{status:"passed", changedCellCount, preservedFormulaCount, unchangedPartCount, totalPartCount, currentHash, outputHash}`.
+
+### Limitations to report honestly
+
+- **`preservedFormulaCount` counts `<f>` nodes, not unique formula cells.** Array/shared formulas with a `ref` attribute are still one `<f>` node; this matches the XML structure but may differ from "unique formula cells" if that's what the caller expects.
+- **Non-target worksheet XML is not re-parsed from output** — it was already proven byte-identical at the decompressed level, so formula counting uses the current copy. Any tampered non-target worksheet XML that is byte-identical to current would pass (which is the desired behaviour).
+- **`sharedStrings.xml` is treated as a non-target part** — it must be byte-identical, so a patcher that moves values to shared strings would correctly fail. The verifier does not re-read shared strings from output.
+- **`_compare_elements_strict` strips surrounding whitespace** when comparing text nodes. Whitespace-only text changes in non-target XML would not be caught. This is consistent with how `workbook.py` itself normalises whitespace.
+- **XML namespace declarations and attribute serialisation order are not compared** — by design (parsed-tree comparison). A patcher that changes namespace prefixes or adds redundant namespace declarations would pass the XML checks but would still fail the byte-identity check on non-target parts.
+- **No upper limit on number of patches** beyond what `read_table` enforces (≤500 rows × ≤2 editable columns = ≤1000 patches maximum). This is bounded by the workbook size limits already in `_open_zip`.

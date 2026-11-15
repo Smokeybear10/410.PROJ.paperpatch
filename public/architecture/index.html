@@ -1,0 +1,142 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PaperPatch architecture</title><style>body{margin:40px auto;max-width:1100px;padding:0 24px;background:#f6f5ef;color:#172c23;font:15px/1.65 system-ui}.prose{white-space:pre-wrap;font:inherit}.mermaid{padding:24px;background:white;border:1px solid #d9ddd4;border-radius:12px;overflow:auto}</style><pre class="prose"># PaperPatch architecture
+
+## System overview
+
+React/Vite review UI calls one loopback FastAPI service. Python owns workbook identity, print geometry, local recognition and approval validation. Output begins with the current working workbook, initially the latest upload. Each successful export promotes its output to the working copy; the printed baseline stays immutable.
+
+</pre><pre class="mermaid">graph TD
+  UI[React review UI] --&gt; API[FastAPI localhost 7171]
+  API --&gt; W[Workbook ZIP and XML]
+  API --&gt; P[PDF and OpenCV geometry]
+  P --&gt; OCR[Local TrOCR]
+  API --&gt; M[Three-way merge]
+  API --&gt; S[(Local session files)]
+</pre><pre class="prose">
+
+## Components
+
+| Name | Purpose | Owns | Depends on | Lives in |
+|---|---|---|---|---|
+| Review UI | Configure, scan, approve | In-progress decisions | API | src/App.tsx |
+| API/session | Validate revisions and persist state | Session files | All backend modules | backend/main.py |
+| Workbook | Typed table and targeted patching | Workbook package operations | lxml, zipfile | backend/workbook.py |
+| Merge | Compare and validate approval | Pure rules | Typed tables | backend/merge.py |
+| Paper | Fixed layout, alignment, crops, recognition | Print manifest and model cache | ReportLab, OpenCV, TrOCR | backend/paper.py |
+
+## Request lifecycles
+
+### Open workbook — 2 seconds
+
+</pre><pre class="mermaid">sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant A as FastAPI
+  participant C as workbook.read_table
+  U-&gt;&gt;B: Upload XLSX
+  B-&gt;&gt;A: Validated request
+  A-&gt;&gt;C: Execute against session revision
+  C--&gt;&gt;A: Result or actionable error
+  A--&gt;&gt;B: Persisted result
+</pre><pre class="prose">
+
+### Generate paper — 2 seconds
+
+</pre><pre class="mermaid">sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant A as FastAPI
+  participant C as paper.generate_paper
+  U-&gt;&gt;B: Choose fields
+  B-&gt;&gt;A: Validated request
+  A-&gt;&gt;C: Execute against session revision
+  C--&gt;&gt;A: Result or actionable error
+  A--&gt;&gt;B: Persisted result
+</pre><pre class="prose">
+
+### Process photograph — 60 seconds warm
+
+</pre><pre class="mermaid">sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant A as FastAPI
+  participant C as paper.scan_photo
+  U-&gt;&gt;B: Upload photo
+  B-&gt;&gt;A: Validated request
+  A-&gt;&gt;C: Execute against session revision
+  C--&gt;&gt;A: Result or actionable error
+  A--&gt;&gt;B: Persisted result
+</pre><pre class="prose">
+
+### Reconcile edits — 500 ms
+
+</pre><pre class="mermaid">sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant A as FastAPI
+  participant C as merge.reconcile
+  U-&gt;&gt;B: Review proposals
+  B-&gt;&gt;A: Validated request
+  A-&gt;&gt;C: Execute against session revision
+  C--&gt;&gt;A: Result or actionable error
+  A--&gt;&gt;B: Persisted result
+</pre><pre class="prose">
+
+### Export workbook — 2 seconds
+
+</pre><pre class="mermaid">sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant A as FastAPI
+  participant C as workbook.patch_workbook
+  U-&gt;&gt;B: Approve decisions
+  B-&gt;&gt;A: Validated request
+  A-&gt;&gt;C: Execute against session revision
+  C--&gt;&gt;A: Result or actionable error
+  A--&gt;&gt;B: Persisted result
+</pre><pre class="prose">
+
+## State topology
+
+| State | Logical owner | Physical home | TTL | Failure mode |
+|---|---|---|---|---|
+| Baseline/current | Service | .data/sessions/ID/*.xlsx | Until locally removed | Must upload again |
+| Configuration/manifest | Service | session.json | Session lifetime | Cannot identify paper |
+| Scan/crops | Service | scans/ and crops/ | Session lifetime | Retake scan |
+| Accepted receipts | Service | session.json | Session lifetime | Replay protection lost if session deleted |
+| Review decisions | Browser | React state | Until revision/upload change | Review again |
+| Active session | URL | ?session=ID | Browser history | Open session link |
+| OCR model | Service | Hugging Face local cache | Until removed | Download needed |
+
+## Deployment topology
+
+</pre><pre class="mermaid">graph LR
+  subgraph Browser
+    UI[React static bundle]
+  end
+  subgraph Local_Mac
+    API[FastAPI loopback 7171]
+    DATA[(Ignored local data)]
+    OCR[Local OCR model]
+  end
+  UI --&gt; API
+  API --&gt; DATA
+  API --&gt; OCR
+</pre><pre class="prose">
+
+The first build has no hosted service, account or remote storage. Uploaded workbooks stay on this machine. Only initial dependency/model downloads need network access. Bind loopback; public hosting is a future separate step.
+
+## Decision log
+
+| Decision | Rationale | Alternatives | Date |
+|---|---|---|---|
+| React/Vite + FastAPI | One production service; direct Python image tooling | Next with separate API; all-TS | 2026-11-12 |
+| Targeted OOXML patch | Preserve unrelated workbook parts | openpyxl/ExcelJS round trip | 2026-11-12 |
+| Fixed paper geometry | Reliable crop identity | Arbitrary Excel photo extraction | 2026-11-12 |
+| Local TrOCR | No paid credentials; honest handwriting proposals | Cloud OCR; Tesseract | 2026-11-12 |
+| Session JSON with serialized mutations | Small local proof needs no database | SQLite/cloud DB | 2026-11-12 |
+| Kiro owns workbook + merge | Substantive competition tooling use | Retrospective provenance files | 2026-11-12 |
+
+## Out of scope
+
+Arbitrary print layouts, ID changes, row insertion/deletion, formula evaluation, accounts, cloud storage and deployment are excluded to make the round trip verifiable. Real handwritten phone photos still require empirical validation.
+</pre><script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true,theme:"neutral"});</script></html>
