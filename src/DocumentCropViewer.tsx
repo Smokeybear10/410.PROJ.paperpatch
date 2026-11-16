@@ -9,7 +9,7 @@ export function DocumentCropViewer({ src, alt }: { src: string; alt: string }) {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [panning, setPanning] = useState(false);
   const fitWidth = dimensions.width && dimensions.height
-    ? Math.min(width, (180 * dimensions.width) / dimensions.height)
+    ? Math.min(width, (112 * dimensions.width) / dimensions.height)
     : width;
   const imageWidth = fitWidth * zoom;
   const imageHeight = dimensions.width ? imageWidth * dimensions.height / dimensions.width : 80;
@@ -52,7 +52,7 @@ export function DocumentCropViewer({ src, alt }: { src: string; alt: string }) {
       <div
         ref={viewport}
         className={`doc-crop-window ${zoom > 1 ? "zoomed" : ""} ${panning ? "panning" : ""}`}
-        style={{ height: Math.max(58, Math.min(zoom === 1 ? 180 : 260, imageHeight)) }}
+        style={{ height: Math.max(58, Math.min(zoom === 1 ? 112 : 260, imageHeight)) }}
         tabIndex={zoom > 1 ? 0 : -1}
         role="region"
         aria-label={zoom > 1 ? "Enlarged source image. Drag or use arrow keys to pan." : "Source image"}
