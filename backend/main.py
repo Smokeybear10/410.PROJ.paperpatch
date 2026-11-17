@@ -370,7 +370,7 @@ def queue_scans(sid: str, files: list[UploadFile]) -> tuple[dict, list[Future], 
 
 @app.get('/api/health')
 def health() -> dict:
-    return {'status': 'ok', 'ocr': 'Local TrOCR', 'storage': 'local'}
+    return {'status': 'ok', 'ocr': 'Local PP-OCRv6 (Word)', 'storage': 'local'}
 
 @app.post('/api/sessions')
 def create_session(file: UploadFile) -> dict:
