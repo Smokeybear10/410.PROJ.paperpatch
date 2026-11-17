@@ -265,13 +265,34 @@ def _struck_groups(mask: np.ndarray, page: dict) -> tuple[list[dict], np.ndarray
     _, components, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
     strokes = cv2.HoughLinesP(mask, 1, np.pi / 180, threshold=20,
                              minLineLength=20, maxLineGap=7)
+    strokes = [] if strokes is None else [tuple(stroke) for stroke in strokes[:, 0]]
+    short_strokes = set()
+    for word in page["words"]:
+        x, y, width, height = [coordinate * SCALE for coordinate in word["rect"]]
+        if width >= 20:
+            continue
+        left, top = max(0, int(x) - 4), max(0, int(y))
+        right, bottom = min(mask.shape[1], int(x + width) + 5), min(mask.shape[0], int(y + height) + 1)
+        minimum = max(6, int(width * 0.6))
+        local = cv2.HoughLinesP(mask[top:bottom, left:right], 1, np.pi / 180,
+                                threshold=minimum, minLineLength=minimum, maxLineGap=2)
+        if local is not None:
+            for x1, y1, x2, y2 in local[:, 0]:
+                if x2 < x1:
+                    x1, x2, y1, y2 = x2, x1, y2, y1
+                stroke = (int(x1 + left), int(y1 + top), int(x2 + left), int(y2 + top))
+                if stroke not in strokes and (stroke[2], stroke[3], stroke[0], stroke[1]) not in strokes:
+                    short_strokes.add(stroke)
+                    strokes.append(stroke)
     horizontal = []
     stroke_components = {}
-    if strokes is not None:
-        for x1, y1, x2, y2 in strokes[:, 0]:
+    if strokes:
+        for x1, y1, x2, y2 in strokes:
             if x2 < x1:
                 x1, x2, y1, y2 = x2, x1, y2, y1
-            if x2 - x1 < 20 or abs(y2 - y1) > (x2 - x1) * 0.15:
+            stroke = (int(x1), int(y1), int(x2), int(y2))
+            minimum = 6 if stroke in short_strokes else 20
+            if x2 - x1 < minimum or abs(y2 - y1) > (x2 - x1) * 0.15:
                 continue
             labels, counts = np.unique(components[max(0, min(y1, y2) - 3):max(y1, y2) + 4,
                                                   max(0, x1):x2 + 1], return_counts=True)
@@ -282,7 +303,6 @@ def _struck_groups(mask: np.ndarray, page: dict) -> tuple[list[dict], np.ndarray
             component = stats[component_id]
             if component[cv2.CC_STAT_HEIGHT] > max(12, component[cv2.CC_STAT_WIDTH] * 0.15):
                 continue
-            stroke = (int(x1), int(y1), int(x2), int(y2))
             horizontal.append(stroke)
             stroke_components[stroke] = component_id
     selected: list[tuple[int, dict]] = []
@@ -293,6 +313,8 @@ def _struck_groups(mask: np.ndarray, page: dict) -> tuple[list[dict], np.ndarray
         matched = []
         intervals = []
         for x1, y1, x2, y2 in horizontal:
+            if width >= 20 and (x1, y1, x2, y2) in short_strokes:
+                continue
             mid_y = (y1 + y2) / 2
             overlap = min(x + width, x2) - max(x, x1)
             if y + height * 0.2 <= mid_y <= y + height * 0.75 and overlap >= 8:
