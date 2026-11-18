@@ -16,6 +16,7 @@ SOURCE_FILES = {
     'pyproject.toml', 'uv.lock', 'index.html', 'vite.config.ts',
     'tsconfig.json', 'tsconfig.app.json', 'tsconfig.node.json',
     'run-paperpatch.sh', 'scripts/package-release.py', 'public/favicon.svg',
+    'docs/screenshots/paperpatch.png',
 }
 SOURCE_DIRECTORIES = ('backend/', 'src/', '.kiro/', 'public/fonts/')
 

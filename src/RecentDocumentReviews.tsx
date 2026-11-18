@@ -71,8 +71,8 @@ export function RecentDocumentReviews({ busy }: { busy: boolean }) {
     <section className="doc-recent" aria-labelledby="recent-reviews-heading">
       <div className="doc-recent-heading">
         <div>
-          <h2 id="recent-reviews-heading">Continue a review.</h2>
-          <p>Recent reviews saved on this computer.</p>
+          <h2 id="recent-reviews-heading">Recent documents</h2>
+          <p>Pick up where you left off.</p>
         </div>
         {reviews.length > 3 && (
           <button className="doc-text-link" onClick={() => setExpanded(!expanded)}>
