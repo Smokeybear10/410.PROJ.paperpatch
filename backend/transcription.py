@@ -10,17 +10,19 @@ from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 import json
 import logging
+import math
 import re
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.document_ocr import METADATA, recognize_handwriting_candidates
-from backend.paper import MAX_IMAGE_BYTES, OCR_LOCK, _read_photo
+from backend.paper import MAX_IMAGE_BYTES, OCR_LOCK
+from backend.transcription_image import prepare_transcription_image
 
 
 DATA = Path(__file__).resolve().parent.parent / '.data' / 'transcriptions'
@@ -29,7 +31,9 @@ LOCK = RLock()
 SLOTS = BoundedSemaphore(2)
 WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix='paperpatch-transcribe')
 ACTIVE: set[str] = set()
+ACTIVE_RETRIES: set[tuple[str, str]] = set()
 MAX_LINES = 120
+MAX_RETRY_ATTEMPTS = 20
 router = APIRouter(prefix='/api/transcriptions')
 logger = logging.getLogger(__name__)
 
@@ -62,6 +66,31 @@ class NewLine(Revision):
     _valid_text = field_validator('text')(LineUpdate.valid_text.__func__)
 
 
+class RecognizeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    revision: int = Field(ge=0)
+    rect: list[float] = Field(min_length=4, max_length=4)
+
+    @field_validator('rect')
+    @classmethod
+    def valid_rect(cls, value: list[float]) -> list[float]:
+        x, y, w, h = value
+        if not all(math.isfinite(number) for number in value):
+            raise HTTPException(422, 'Selection coordinates must be finite numbers.')
+        if x < 0 or y < 0 or w <= 0 or h <= 0:
+            raise ValueError('rect origin must be non-negative and dimensions must be positive.')
+        if x + w > 1.0 + 1e-9 or y + h > 1.0 + 1e-9:
+            raise ValueError('rect must be fully inside the page (coordinates normalized 0–1).')
+        return value
+
+
+class RecognitionChoiceRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    revision: int = Field(ge=0)
+    attemptId: str = Field(pattern=r'^[a-f0-9]{32}$')
+    useCandidate: bool
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -85,11 +114,31 @@ def load(sid: str) -> dict:
         session.update(status='failed', error='Reading stopped when PaperPatch restarted. Upload the page again.')
         session['revision'] += 1
         save(session)
+        return session
+    pending_rec = session.get('pendingRecognition')
+    if pending_rec is not None:
+        attempt_id = pending_rec.get('id', '')
+        if (sid, attempt_id) not in ACTIVE_RETRIES:
+            session['pendingRecognition'] = None
+            session['revision'] += 1
+            line_id = pending_rec.get('lineId')
+            if line_id:
+                for line in session.get('lines', []):
+                    if line['id'] == line_id:
+                        line['warning'] = (
+                            'A re-read was interrupted when PaperPatch restarted. '
+                            'You can retry or keep the existing reading.'
+                        )
+                        break
+            save(session)
     return session
 
 
 def present(session: dict) -> dict:
-    return {key: value for key, value in session.items() if not key.startswith('_')}
+    result = {key: value for key, value in session.items() if not key.startswith('_')}
+    if result.get('pendingRecognition') is not None:
+        result['export'] = None
+    return result
 
 
 def file_url(sid: str, name: str) -> str:
@@ -101,6 +150,14 @@ def require_revision(session: dict, revision: int) -> None:
         raise HTTPException(409, 'Wait for the page to finish reading before reviewing or exporting.')
     if session['revision'] != revision:
         raise HTTPException(409, 'This page changed. Reload it before saving your review.')
+    if session.get('pendingRecognition') is not None:
+        raise HTTPException(409, 'A re-read is in progress. Wait for it to finish before making other changes.')
+
+
+def _require_no_unresolved_candidate(session: dict) -> None:
+    for line in session.get('lines', []):
+        if line.get('recognitionCandidate') is not None:
+            raise HTTPException(409, 'Resolve all pending re-read candidates before this action.')
 
 
 def changed(session: dict) -> dict:
@@ -189,7 +246,9 @@ def read_page(sid: str, image: np.ndarray) -> None:
                         ocrText=reading['text'], ocrAlternatives=reading['alternatives'],
                         text=reading['text'], confirmed=False, dismissed=False,
                         paragraphBreak=index == 0 or top - previous_bottom > typical_height * .6,
-                        source='ocr', warning=reading['warning'])
+                        source='ocr', warning=reading['warning'],
+                        recognitionHistory=[], recognitionCandidate=None,
+                        originalRect=None, originalCropUrl=None)
             previous_bottom = bottom
             with LOCK:
                 session = load(sid)
@@ -217,7 +276,7 @@ def read_page(sid: str, image: np.ndarray) -> None:
 
 
 @router.post('')
-def upload_page(file: UploadFile) -> dict:
+def upload_page(file: UploadFile, preparation: str | None = Form(None)) -> dict:
     if not SLOTS.acquire(blocking=False):
         raise HTTPException(429, 'Two pages are already being read. Wait for one to finish.')
     submitted = False
@@ -225,7 +284,7 @@ def upload_page(file: UploadFile) -> dict:
         data = file.file.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:
             raise ValueError('Photo exceeds the 20 MB limit.')
-        image = _read_photo(data)
+        image, preparation_meta = prepare_transcription_image(data, preparation)
         with Image.open(BytesIO(data)) as source:
             formats = {'JPEG': ('jpg', 'image/jpeg'), 'PNG': ('png', 'image/png'), 'WEBP': ('webp', 'image/webp')}
             if source.format not in formats:
@@ -250,8 +309,10 @@ def upload_page(file: UploadFile) -> dict:
                                 if min(width, height) < 700 else
                                 'Check the full page for missed text, especially columns, margins, and angled writing.'),
                        error=None, pageReviewed=False, export=None,
+                       pendingRecognition=None,
+                       preparation=preparation_meta,
                        recognizer={**METADATA, 'lineDetection': 'Single-column horizontal ink projection with component filtering and midpoint line boundaries.',
-                                   'capturePreprocessing': 'EXIF orientation; maximum 3300 pixels per side; source-pixel rectangular line crops. Original upload preserved.'},
+                                   'capturePreprocessing': 'EXIF orientation; maximum 3300 pixels per side; optional user-selected clockwise rotation, fine straightening and crop recorded in preparation; rectangular crops from the prepared page. Original upload preserved.'},
                        _files={original_name: {'mediaType': content_type}, 'page.png': {'mediaType': 'image/png'}})
         with LOCK:
             ACTIVE.add(sid)
@@ -282,6 +343,8 @@ def update_line(sid: str, line_id: str, body: LineUpdate) -> dict:
         line = next((item for item in session['lines'] if item['id'] == line_id), None)
         if line is None:
             raise HTTPException(404, 'Handwriting line not found.')
+        if line.get('recognitionCandidate') is not None:
+            raise HTTPException(409, 'Resolve the pending re-read candidate before editing this line.')
         if body.confirmed and not body.dismissed and not body.text.strip():
             raise ValueError('Enter this line or dismiss it before confirming.')
         line.update(text=body.text, confirmed=body.confirmed, dismissed=body.dismissed,
@@ -306,7 +369,128 @@ def add_line(sid: str, body: NewLine) -> dict:
         session['lines'].insert(index, dict(id=uuid4().hex, rect=None, cropUrl=None, ocrText='',
                                            ocrAlternatives=[], text=body.text, confirmed=False,
                                            dismissed=False, paragraphBreak=body.paragraphBreak,
-                                           source='manual', warning=None))
+                                           source='manual', warning=None,
+                                           recognitionHistory=[], recognitionCandidate=None,
+                                           originalRect=None, originalCropUrl=None))
+        return changed(session)
+
+
+@router.post('/{sid}/lines/{line_id}/recognize')
+def recognize_line(sid: str, line_id: str, body: RecognizeRequest) -> dict:
+    if not SLOTS.acquire(blocking=False):
+        raise HTTPException(429, 'Two pages are already being read. Wait for one to finish.')
+    attempt_id = None
+    crop_path = None
+    completed = False
+    try:
+        with LOCK:
+            session = load(sid)
+            require_revision(session, body.revision)
+            line = next((item for item in session['lines'] if item['id'] == line_id), None)
+            if line is None:
+                raise HTTPException(404, 'Handwriting line not found.')
+            if line.get('source') == 'manual' or line.get('rect') is None:
+                raise HTTPException(409, 'This line has no detected image region to reread.')
+            if line.get('recognitionCandidate') is not None:
+                raise HTTPException(409, 'Choose whether to use the pending reading before trying another selection.')
+            if len(line.get('recognitionHistory') or []) >= MAX_RETRY_ATTEMPTS:
+                raise HTTPException(409, 'This line has reached its 20-reading limit. Enter the text manually.')
+            width, height = session['imageWidth'], session['imageHeight']
+            x, y, w, h = body.rect
+            left, top = math.floor(x * width), math.floor(y * height)
+            right, bottom = min(width, math.ceil((x + w) * width)), min(height, math.ceil((y + h) * height))
+            crop_width, crop_height = right - left, bottom - top
+            if min(crop_width, crop_height) < 4:
+                raise HTTPException(422, 'Select at least 4 pixels in each direction.')
+            if max(crop_width / crop_height, crop_height / crop_width) > 60:
+                raise HTTPException(422, 'Select one handwriting line with an aspect ratio below 60:1.')
+            attempt_id = uuid4().hex
+            session['pendingRecognition'] = {'id': attempt_id, 'lineId': line_id, 'startedAt': now()}
+            session['revision'] += 1
+            reserved_revision = session['revision']
+            ACTIVE_RETRIES.add((sid, attempt_id))
+            save(session)
+
+        page = cv2.imread(str(DATA / sid / 'page.png'))
+        if page is None or page.shape[:2] != (height, width):
+            raise OSError('The saved source page is unavailable or has changed.')
+        crop = page[top:bottom, left:right]
+        with OCR_LOCK:
+            reading = recognize_handwriting_candidates(crop)
+        crop_name = f'retry-{attempt_id}.png'
+        crop_path = DATA / sid / crop_name
+        if not cv2.imwrite(str(crop_path), crop):
+            raise OSError('Could not save the selected handwriting region.')
+        attempt = dict(id=attempt_id,
+                       rect=[left / width, top / height, crop_width / width, crop_height / height],
+                       cropUrl=file_url(sid, crop_name), text=reading['text'],
+                       alternatives=reading['alternatives'], warning=reading['warning'], createdAt=now())
+        with LOCK:
+            session = load(sid)
+            if ((session.get('pendingRecognition') or {}).get('id') != attempt_id
+                    or session['revision'] != reserved_revision):
+                raise HTTPException(409, 'This page changed during recognition. Your previous text was kept.')
+            line = next((item for item in session['lines'] if item['id'] == line_id), None)
+            if line is None:
+                raise HTTPException(409, 'The selected line changed during recognition.')
+            if line.get('originalRect') is None:
+                line['originalRect'] = line['rect']
+                line['originalCropUrl'] = line['cropUrl']
+            line.setdefault('recognitionHistory', []).append(attempt)
+            line['recognitionCandidate'] = attempt
+            line['confirmed'] = False
+            session['_files'][crop_name] = {'mediaType': 'image/png'}
+            session['pendingRecognition'] = None
+            result = changed(session)
+            completed = True
+            return result
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception('Could not reread handwriting line %s in %s', line_id, sid)
+        raise HTTPException(503, 'The local reader could not reread this selection. Your text was kept; retry or enter it manually.') from error
+    finally:
+        try:
+            with LOCK:
+                if attempt_id is not None:
+                    try:
+                        if not completed:
+                            session = load(sid)
+                            if (session.get('pendingRecognition') or {}).get('id') == attempt_id:
+                                session['pendingRecognition'] = None
+                                session['revision'] += 1
+                                save(session)
+                    except Exception:
+                        logger.exception('Could not clear the saved reread reservation for %s', sid)
+                    finally:
+                        ACTIVE_RETRIES.discard((sid, attempt_id))
+            if crop_path is not None and not completed:
+                try:
+                    crop_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.exception('Could not remove unregistered reread image %s', crop_path)
+        finally:
+            SLOTS.release()
+
+
+@router.post('/{sid}/lines/{line_id}/recognition-choice')
+def recognition_choice(sid: str, line_id: str, body: RecognitionChoiceRequest) -> dict:
+    with LOCK:
+        session = load(sid)
+        require_revision(session, body.revision)
+        line = next((item for item in session['lines'] if item['id'] == line_id), None)
+        if line is None:
+            raise HTTPException(404, 'Handwriting line not found.')
+        candidate = line.get('recognitionCandidate')
+        if candidate is None or candidate['id'] != body.attemptId:
+            raise HTTPException(409, 'This reading has changed. Reload the page before choosing it.')
+        if body.useCandidate:
+            line.update(text=candidate['text'], rect=candidate['rect'], cropUrl=candidate['cropUrl'],
+                        warning=candidate['warning'])
+        for attempt in line['recognitionHistory']:
+            if attempt['id'] == body.attemptId:
+                attempt.update(decision='accepted' if body.useCandidate else 'kept_current', decidedAt=now())
+        line.update(recognitionCandidate=None, confirmed=False)
         return changed(session)
 
 
@@ -323,6 +507,7 @@ def confirm_readings(sid: str, body: Revision) -> dict:
     with LOCK:
         session = load(sid)
         require_revision(session, body.revision)
+        _require_no_unresolved_candidate(session)
         if any(not line['dismissed'] and not line['text'].strip() for line in session['lines']):
             raise HTTPException(409, 'Enter or dismiss the empty readings before confirming all lines.')
         for line in session['lines']:
@@ -336,6 +521,7 @@ def review_page(sid: str, body: Revision) -> dict:
     with LOCK:
         session = load(sid)
         require_revision(session, body.revision)
+        _require_no_unresolved_candidate(session)
         require_readings(session)
         session.update(pageReviewed=True, export=None)
         session['revision'] += 1
@@ -396,6 +582,7 @@ def export_page(sid: str, body: Revision) -> dict:
     with LOCK:
         session = load(sid)
         require_revision(session, body.revision)
+        _require_no_unresolved_candidate(session)
         require_readings(session)
         if not session['pageReviewed']:
             raise HTTPException(409, 'Check the full page for missed text before exporting.')
@@ -407,6 +594,8 @@ def export_page(sid: str, body: Revision) -> dict:
         (path / name).write_bytes(data)
         audit = {'version': 1, 'exportedAt': now(), 'sourceSha256': session['sourceSha256'],
                  'sourceFilename': session['filename'], 'sourceUrl': session['originalUrl'],
+                 'preparedPageUrl': session['previewUrl'], 'preparation': session.get('preparation'),
+                 'preparedPageSha256': sha256((path / 'page.png').read_bytes()).hexdigest(),
                  'reviewedRevision': session['revision'], 'pageReviewed': True,
                  'recognizer': session['recognizer'], 'lines': session['lines'],
                  'exportSha256': sha256(data).hexdigest(),

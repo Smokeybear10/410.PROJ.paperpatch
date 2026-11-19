@@ -1,0 +1,36 @@
+{
+  "task": "User-adjustable line crops and human-reviewed local OCR retries",
+  "kiro_version": "3.3.0",
+  "kiro_engine": "v3",
+  "kiro_session_id": "sess_1a4a3433-0d73-4fb7-a5c4-44f039a5f480",
+  "kiro_status": "success",
+  "isolated_workspace": "/tmp/paperpatch-region-recovery-nov19",
+  "write_scope": "backend/transcription.py only; no shell or external-service tools",
+  "specification": ".kiro/specs/paperpatch/region-recovery-task.txt",
+  "session_receipt": ".kiro/evidence/region-recovery-session.jsonl",
+  "receipt_filter": "Initial configuration, global command catalogs and session-info updates omitted. All task tool calls, tool outputs, assistant messages, and run completion events retained verbatim. Unfiltered original retained locally with its SHA-256 below.",
+  "unfiltered_session_sha256": "545c4c4dd3100705c0da37e8d16ddeb85045de16375c67cdad3f613326c43e2f",
+  "receipt_sha256": "09d6fa070ed61236e6e6a2c1bdf21f7e7836ee66239c879f2062ffaa0bba7858",
+  "kiro_generated_source_sha256": "cb3ed92dd8562be8d937d173e61c09c29977d7c8326a57a88c6074c890127c9e",
+  "final_reviewed_source_sha256": "a62545aca59663db299d49bf57b64df0ac68032a673a2fe98ead9425024fb2f1",
+  "kiro_contribution": "Implemented retry and choice endpoints, request models, candidate history and original-region provenance, review/export gating, restart recovery, and multipart preparation integration.",
+  "codex_review_changes": [
+    "Changed asynchronous queueing to the agreed synchronous response with observable in-flight reservation.",
+    "Made OCR/runtime failure return503 while preserving prior text, confirmation, export and history.",
+    "Removed silent fallback when the required preparation helper is unavailable.",
+    "Guaranteed scanner-slot release and cleanup after failed reservation/candidate persistence.",
+    "Validated pixel geometry and nonfinite coordinates without returning500.",
+    "Recorded explicit acceptance/rejection and preparation metadata in the export audit."
+  ],
+  "verification": {
+    "isolated_api_checks_passed": 44,
+    "real_ocr": "One genuine image crop read by the pinned local PP-OCRv6 models; state and provenance verified, not an accuracy benchmark.",
+    "source_sha256": "875ab8eb437e09981345b5dc4cb9d1e950d7e89faf84da1e956759808be81f61",
+    "test_artifact": "outputs/capture-recovery-nov19/region-api-checks.json"
+  },
+  "limitations": [
+    "No claim of arbitrary handwriting accuracy or measured user time savings.",
+    "Manual photo straightening/cropping implemented separately by Codex; not attributed to Kiro.",
+    "Frontend implementation is separate; this receipt establishes backend contribution only."
+  ]
+}

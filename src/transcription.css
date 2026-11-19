@@ -117,3 +117,52 @@
   .transcription-entry a { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .transcription-spinner { animation: none; } }
+
+.transcription-preparation { margin-top: 26px; padding: 23px; border: 1px solid #c5c8cc; background: #fff; }
+.transcription-preparation-title { display: flex; gap: 15px; justify-content: space-between; align-items: baseline; }
+.transcription-preparation-title h2 { font-size: 18px; flex-shrink: 0; }
+.transcription-preparation-title span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
+.transcription-preparation > p { color: #5c6570; font-size: 12px; margin-top: 9px; }
+.transcription-photo-tools { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 19px 0 15px; }
+.doc-app label.transcription-straighten { display: flex; flex-direction: row; align-items: center; gap: 13px; font-size: 12px; font-weight: 400; }
+.doc-app .transcription-straighten input { width: auto; flex: 1; min-width: 60px; accent-color: #354d60; padding: 0; }
+.transcription-straighten output { width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+.transcription-photo-help { font-size: 11px !important; line-height: 1.55; color: #69717b !important; }
+.transcription-preparation-image { margin: 17px auto 0; }
+.transcription-preparation-actions { display: flex; gap: 17px; flex-wrap: wrap; align-items: center; margin-top: 19px; }
+.transcription-selection-frame { position: relative; overflow: hidden; background: #fff; touch-action: none; cursor: crosshair; }
+.transcription-selection-frame:focus-visible { outline: 2px solid #235e8b; outline-offset: 3px; }
+.transcription-selection-frame > img { width: 100%; height: auto; display: block; user-select: none; pointer-events: none; }
+.transcription-selection-box { position: absolute; border: 2px solid #28648e; box-shadow: 0 0 0 200vmax #172a4166; cursor: move; }
+.doc-app button.transcription-selection-handle { position: absolute; width: 24px; height: 24px; padding: 0; background: transparent; border: 0; border-radius: 0; touch-action: none; }
+.transcription-selection-handle::after { content: ""; position: absolute; inset: 7px; background: #fff; border: 2px solid #28648e; }
+.transcription-selection-handle.nw { left: -12px; top: -12px; cursor: nwse-resize; }
+.transcription-selection-handle.ne { right: -12px; top: -12px; cursor: nesw-resize; }
+.transcription-selection-handle.sw { left: -12px; bottom: -12px; cursor: nesw-resize; }
+.transcription-selection-handle.se { right: -12px; bottom: -12px; cursor: nwse-resize; }
+.transcription-selection-precise { padding: 10px 0; font-size: 11px; background: #fff; }
+.transcription-selection-precise summary { color: #4b5e6f; cursor: pointer; }
+.transcription-selection-precise > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
+.doc-app .transcription-selection-precise label { font-size: 10px; }
+.doc-app .transcription-selection-precise input { padding: 6px; font-size: 12px; min-width: 0; width: 100%; }
+.transcription-selection-help { padding: 14px 22px 0; font-size: 12px; line-height: 1.6; color: #43505d; }
+.transcription-selection-help span { font-size: 11px; color: #69717b; display: block; margin-top: 4px; }
+.transcription-selection-actions { padding: 0 22px 18px; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+.transcription-adjust-selection { margin: -3px 0 15px; }
+.transcription-candidate { padding: 14px; border: 1px solid #aebfcd; background: #fff; margin-bottom: 17px; }
+.transcription-candidate h3 { font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+.transcription-candidate > p { font-size: 11px; line-height: 1.6; color: #626c76; }
+.transcription-candidate p.transcription-candidate-text { font-size: 15px; color: #26343f; background: #edf2f6; padding: 9px 11px; margin: 10px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.transcription-candidate .doc-button { white-space: normal; text-align: left; }
+.transcription-recognition-history { margin-top: 12px; }
+.transcription-recognition-history > span { display: block; margin-bottom: 8px; }
+.transcription-original-reading .transcription-crop { margin-top: 8px; }
+@media (max-width: 650px) {
+  .transcription-preparation { padding: 16px; }
+  .transcription-preparation-title { flex-direction: column; gap: 5px; }
+  .transcription-preparation-title span { text-align: left; }
+  .transcription-photo-tools { gap: 9px; }
+  .transcription-selection-precise > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transcription-selection-help { padding: 12px 16px 0; }
+  .transcription-selection-actions { padding: 0 16px 16px; }
+}

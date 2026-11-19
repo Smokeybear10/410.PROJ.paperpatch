@@ -1,0 +1,35 @@
+{
+  "name": "paperpatch-region-recovery",
+  "description": "Bounded transcription retry implementation",
+  "prompt": "Read TASK.txt and implement the requested backend change in backend/transcription.py only. Preserve existing code outside scope.",
+  "tools": [
+    "read",
+    "write"
+  ],
+  "excludedTools": [
+    "shell",
+    "web",
+    "subagent"
+  ],
+  "includeMcpJson": false,
+  "includePowers": false,
+  "mcpServers": {},
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "match": [
+          "/tmp/paperpatch-region-recovery-nov19/**"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          "/tmp/paperpatch-region-recovery-nov19/backend/transcription.py"
+        ],
+        "effect": "allow"
+      }
+    ]
+  }
+}

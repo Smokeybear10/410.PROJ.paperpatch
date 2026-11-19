@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { ArrowDownToLine, ArrowLeft, Check, ChevronDown, FileText, LoaderCircle, Plus, RotateCcw, Upload, X } from "lucide-react";
+import { ImageSelection, PhotoPreparation } from "./TranscriptionImageEditor";
+import type { Preparation, Selection } from "./TranscriptionImageEditor";
 import "./documents.css";
 import "./transcription.css";
 
 const fileUrl = z.string().startsWith("/api/transcriptions/");
+const recognitionSchema = z.object({
+  id: z.string(), rect: z.tuple([z.number(), z.number(), z.number(), z.number()]), cropUrl: fileUrl,
+  text: z.string(), alternatives: z.array(z.string()), warning: z.string().nullable(), createdAt: z.string(),
+});
 const lineSchema = z.object({
   id: z.string(),
   rect: z.tuple([z.number(), z.number(), z.number(), z.number()]).nullable(),
@@ -17,6 +23,10 @@ const lineSchema = z.object({
   paragraphBreak: z.boolean(),
   source: z.enum(["ocr", "manual"]),
   warning: z.string().nullable(),
+  recognitionHistory: z.array(recognitionSchema).default([]),
+  recognitionCandidate: recognitionSchema.nullable().default(null),
+  originalRect: z.tuple([z.number(), z.number(), z.number(), z.number()]).nullable().optional(),
+  originalCropUrl: fileUrl.nullable().optional(),
 });
 const sessionSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{32}$/),
@@ -35,6 +45,8 @@ const sessionSchema = z.object({
   error: z.string().nullable(),
   pageReviewed: z.boolean(),
   export: z.object({ url: fileUrl, auditUrl: fileUrl, filename: z.string() }).nullable(),
+  pendingRecognition: z.object({ id: z.string(), lineId: z.string(), startedAt: z.string() }).nullable().default(null),
+  preparation: z.object({ rotation: z.number(), straighten: z.number(), crop: z.tuple([z.number(), z.number(), z.number(), z.number()]) }).optional(),
 });
 type Session = z.infer<typeof sessionSchema>;
 type Line = z.infer<typeof lineSchema>;
@@ -84,6 +96,8 @@ export default function TranscriptionApp() {
   const [manualText, setManualText] = useState("");
   const [addAfter, setAddAfter] = useState<string | null>(null);
   const [completenessChecked, setCompletenessChecked] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [selectionEditor, setSelectionEditor] = useState<{ lineId: string; rect: Selection } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
   const sourceScroll = useRef<HTMLDivElement>(null);
@@ -92,6 +106,9 @@ export default function TranscriptionApp() {
   const selected = session?.lines.find((line) => line.id === selectedId);
   const unresolved = session?.lines.filter((line) => !line.confirmed && !line.dismissed).length ?? 0;
   const included = session?.lines.filter((line) => !line.dismissed).length ?? 0;
+  const pendingChoices = session?.lines.filter((line) => line.recognitionCandidate).length ?? 0;
+  const actionBusy = !!busy || !!session?.pendingRecognition;
+  const prepared = !!session?.preparation && (session.preparation.rotation !== 0 || session.preparation.straighten !== 0 || session.preparation.crop.some((value, index) => value !== (index < 2 ? 0 : 1)));
 
   const adoptSession = useCallback((value: Session) => {
     setSession(value);
@@ -119,7 +136,7 @@ export default function TranscriptionApp() {
   }, [adoptSession]);
 
   useEffect(() => {
-    if (!session || session.status !== "processing") return;
+    if (!session || (session.status !== "processing" && !session.pendingRecognition)) return;
     const abort = new AbortController();
     const timeout = window.setTimeout(() => {
       request(`/api/transcriptions/${session.id}`, { signal: abort.signal }).then((value) => {
@@ -161,23 +178,36 @@ export default function TranscriptionApp() {
     return () => cancelAnimationFrame(frame);
   }, [selectedId, zoom]);
 
-  async function upload(file: File) {
+  useEffect(() => {
+    if (selectionEditor && (selectedId !== selectionEditor.lineId || session?.lines.find((line) => line.id === selectionEditor.lineId)?.recognitionCandidate)) setSelectionEditor(null);
+  }, [selectedId, session?.revision, selectionEditor]);
+
+  function chooseImage(file: File) {
     if (file.size > 20 * 1024 * 1024) { setError("Choose a page image smaller than 20 MB."); return; }
+    if (!/\.(jpe?g|png|webp)$/i.test(file.name) && !["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Choose a JPEG, PNG, or WebP page image."); return;
+    }
+    setError(null); setPendingFile(file);
+  }
+
+  async function upload(file: File, preparation: Preparation) {
     setError(null);
     setBusy("Uploading page");
     const form = new FormData();
     form.append("file", file);
+    form.append("preparation", JSON.stringify(preparation));
     try {
       const value = await request("/api/transcriptions", { method: "POST", body: form });
       setDrafts({});
       adoptSession(value);
+      setPendingFile(null);
       window.history.replaceState(null, "", `?transcription=${value.id}`);
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(null); }
   }
 
   async function mutate(path: string, body: object, label: string, method = "POST"): Promise<Session | null> {
-    if (!session || busy) return null;
+    if (!session || actionBusy) return null;
     setBusy(label);
     setError(null);
     try {
@@ -187,7 +217,7 @@ export default function TranscriptionApp() {
       adoptSession(value);
       return value;
     } catch (reason) {
-      if (reason instanceof RequestError && reason.status === 409) {
+      if ((reason instanceof RequestError && reason.status === 409) || path.endsWith("/recognize")) {
         try { adoptSession(await request(`/api/transcriptions/${session.id}`)); }
         catch { /* Keep the existing page and local edits when refresh also fails. */ }
       }
@@ -235,6 +265,28 @@ export default function TranscriptionApp() {
     }
   }
 
+  async function retrySelection() {
+    if (!selectionEditor) return;
+    const value = await mutate(`/lines/${selectionEditor.lineId}/recognize`, { rect: selectionEditor.rect }, "Reading selected handwriting");
+    if (value) setSelectionEditor(null);
+  }
+
+  async function chooseRecognition(line: Line, useCandidate: boolean) {
+    const candidate = line.recognitionCandidate;
+    if (!candidate) return;
+    const value = await mutate(`/lines/${line.id}/recognition-choice`, { attemptId: candidate.id, useCandidate }, useCandidate ? "Using new reading" : "Keeping current text");
+    if (!value || !useCandidate) return;
+    const updated = value.lines.find((item) => item.id === line.id);
+    if (!updated) return;
+    setDrafts((current) => {
+      const next = { ...current };
+      const existing = current[line.id];
+      if (existing && existing.paragraphBreak !== updated.paragraphBreak) next[line.id] = { text: updated.text, baseText: updated.text, paragraphBreak: existing.paragraphBreak };
+      else delete next[line.id];
+      return next;
+    });
+  }
+
   return <div className="doc-app transcription-app">
     <a className="doc-skip" href="#transcription-main">Skip to transcription</a>
     <header className="transcription-header">
@@ -247,15 +299,15 @@ export default function TranscriptionApp() {
     {!session ? <main className="transcription-start" id="transcription-main">
       <h1>Turn a handwritten page into a Word document</h1>
       <p>Open a scan or photo. Check the recognized text against the page, then save an editable document.</p>
-      <section className={`transcription-upload ${dragging ? "dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => {
-        event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file && !busy) void upload(file);
+      {pendingFile ? <PhotoPreparation key={`${pendingFile.name}:${pendingFile.lastModified}`} file={pendingFile} busy={actionBusy} onCancel={() => { setPendingFile(null); setError(null); }} onRead={(preparation) => void upload(pendingFile, preparation)} /> : <section className={`transcription-upload ${dragging ? "dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => {
+        event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file && !actionBusy) chooseImage(file);
       }}>
         <Upload size={25} strokeWidth={1.5} />
         <h2>{busy ?? (dragging ? "Drop your page here" : "Open a handwritten page")}</h2>
         <p>JPEG or PNG · one page at a time</p>
-        <button className="doc-button primary" disabled={!!busy} onClick={() => input.current?.click()}>{busy ? <LoaderCircle className="transcription-spinner" size={17} /> : <Plus size={17} />} Choose page image</button>
-        <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" ref={input} hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ""; }} />
-      </section>
+        <button className="doc-button primary" disabled={actionBusy} onClick={() => input.current?.click()}>{busy ? <LoaderCircle className="transcription-spinner" size={17} /> : <Plus size={17} />} Choose page image</button>
+        <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" ref={input} hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) chooseImage(file); event.target.value = ""; }} />
+      </section>}
       <p className="transcription-local">Recognition runs on this computer. Your original page stays attached to the transcription.</p>
     </main> : <main id="transcription-main">
       <div className="transcription-toolbar">
@@ -263,19 +315,23 @@ export default function TranscriptionApp() {
         <div className="transcription-title"><h1>{session.filename}</h1><span>{session.status === "processing" ? "Reading handwriting…" : session.status === "failed" ? "Recognition could not finish" : `${included} lines · ${unresolved ? `${unresolved} to review` : "readings confirmed"}`}{dirty && " · unsaved edits"}</span></div>
         <div className="transcription-actions">
           {busy && <span className="transcription-saving" role="status"><LoaderCircle size={14} className="transcription-spinner" />{busy}</span>}
-          {session.export && !dirty ? <a className="doc-button primary compact" href={session.export.url} download><ArrowDownToLine size={16} /> Download Word</a> : <button className="doc-button primary compact" disabled={!!busy || dirty || !session.pageReviewed || session.status !== "ready"} onClick={() => void mutate("/export", {}, "Creating Word document")}><ArrowDownToLine size={16} /> Create Word document</button>}
+          {session.export && !dirty && !actionBusy && !pendingChoices ? <a className="doc-button primary compact" href={session.export.url} download><ArrowDownToLine size={16} /> Download Word</a> : <button className="doc-button primary compact" disabled={actionBusy || dirty || pendingChoices > 0 || !session.pageReviewed || session.status !== "ready"} onClick={() => void mutate("/export", {}, "Creating Word document")}><ArrowDownToLine size={16} /> Create Word document</button>}
         </div>
       </div>
       {session.status === "processing" && <div className="transcription-progress" role="status"><LoaderCircle size={16} className="transcription-spinner" /><span>{session.progress.total ? `Reading line ${Math.min(session.progress.completed + 1, session.progress.total)} of ${session.progress.total}` : "Finding text on the page"}. You can keep this page open while it runs.</span></div>}
+      {session.pendingRecognition && <div className="transcription-progress" role="status"><LoaderCircle size={16} className="transcription-spinner" /><span>Reading the adjusted selection. Your existing text is kept while the reader works.</span></div>}
       {session.error && <div className="transcription-notice error" role="alert">{session.error} <a href="?mode=handwriting">Open another image</a></div>}
       {session.warning && <div className="transcription-notice">{session.warning}</div>}
       <div className="transcription-workspace">
         <section className="transcription-source" aria-label="Original handwritten page">
-          <div className="transcription-pane-heading"><h2>Original page</h2><div><button onClick={() => setZoom(!zoom)}>{zoom ? "Fit page" : "Enlarge"}</button><a href={session.originalUrl} target="_blank" rel="noreferrer">Open original</a></div></div>
+          <div className="transcription-pane-heading"><h2>{selectionEditor ? "Adjust line selection" : prepared ? "Reading copy" : "Original page"}</h2><div><button onClick={() => setZoom(!zoom)}>{zoom ? "Fit page" : "Enlarge"}</button><a href={session.originalUrl} target="_blank" rel="noreferrer">Open original</a></div></div>
+          {selectionEditor && <div className="transcription-selection-help"><p>Include one complete line. Drag the corners to resize, or drag outside the box to draw a new selection.</p><span>Your current wording stays until you choose a new reading.</span></div>}
           <div className="transcription-source-scroll" ref={sourceScroll}><div className={`transcription-image ${zoom ? "enlarged" : ""}`} style={{ width: zoom ? "150%" : `min(100%, calc((100vh - 300px) * ${session.imageWidth / Math.max(1, session.imageHeight)}))` }}>
-            <img src={session.previewUrl} alt={`Original handwritten page: ${session.filename}`} />
-            {selected?.rect && selected.source === "ocr" && !preview && <div className="transcription-region" ref={sourceRegion} style={{ left: `${selected.rect[0] * 100}%`, top: `${selected.rect[1] * 100}%`, width: `${selected.rect[2] * 100}%`, height: `${selected.rect[3] * 100}%` }} />}
+            {selectionEditor ? <ImageSelection src={session.previewUrl} alt={`Choose handwriting for line ${session.lines.findIndex((line) => line.id === selectionEditor.lineId) + 1}`} selection={selectionEditor.rect}
+              disabled={actionBusy} onChange={(rect) => setSelectionEditor((current) => current ? { ...current, rect } : null)} /> : <img src={session.previewUrl} alt={`${prepared ? "Prepared" : "Original"} handwritten page: ${session.filename}`} />}
+            {!selectionEditor && selected?.rect && selected.source === "ocr" && !preview && <div className="transcription-region" ref={sourceRegion} style={{ left: `${selected.rect[0] * 100}%`, top: `${selected.rect[1] * 100}%`, width: `${selected.rect[2] * 100}%`, height: `${selected.rect[3] * 100}%` }} />}
           </div></div>
+          {selectionEditor && <div className="transcription-selection-actions"><button className="doc-button compact primary" disabled={actionBusy} onClick={() => void retrySelection()}>{actionBusy ? <LoaderCircle size={14} className="transcription-spinner" /> : <RotateCcw size={14} />}Read this selection again</button><button className="transcription-quiet" disabled={actionBusy} onClick={() => setSelectionEditor(null)}>Cancel</button></div>}
           <div className="transcription-source-caption">{session.imageWidth} × {session.imageHeight} pixels · uploaded original retained</div>
         </section>
         <section className="transcription-review" aria-label="Recognized text">
@@ -295,15 +351,30 @@ export default function TranscriptionApp() {
                   </button>
                   {active && <div className="transcription-line-editor">
                     {line.cropUrl && <img className="transcription-crop" src={line.cropUrl} alt={`Handwriting for line ${index + 1}`} />}
+                    {line.source === "ocr" && line.rect && !line.dismissed && <button className="transcription-quiet transcription-adjust-selection" disabled={actionBusy || session.status !== "ready" || !!line.recognitionCandidate} onClick={() => {
+                      setSelectionEditor({ lineId: line.id, rect: [...line.rect!] }); setPreview(false);
+                      sourceScroll.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+                    }}>Adjust selection and read again</button>}
+                    {line.recognitionCandidate && <div className="transcription-candidate" aria-label={`New reading for line ${index + 1}`}>
+                      <h3>New reading from your selection</h3>
+                      <img className="transcription-crop" src={line.recognitionCandidate.cropUrl} alt={`Adjusted handwriting selection for line ${index + 1}`} />
+                      <p className="transcription-candidate-text">{line.recognitionCandidate.text || "No readable text returned."}</p>
+                      {line.recognitionCandidate.warning && <p className="transcription-line-warning">{line.recognitionCandidate.warning}</p>}
+                      {line.recognitionCandidate.alternatives.length > 0 && <details className="transcription-original-reading"><summary>Other suggestions</summary>{line.recognitionCandidate.alternatives.map((text) => <p key={text}>{text}</p>)}</details>}
+                      <p>Your current text has not changed. Choose what to keep, then confirm the line.</p>
+                      <div className="transcription-line-buttons"><button className="doc-button compact" disabled={actionBusy || !line.recognitionCandidate.text.trim()} onClick={() => void chooseRecognition(line, true)}>{draft && draft.text !== line.text ? "Replace unsaved text with this reading" : "Use this reading"}</button>
+                        <button className="transcription-quiet" disabled={actionBusy} onClick={() => void chooseRecognition(line, false)}>{draft ? "Keep my current text and edits" : "Keep current text"}</button></div>
+                    </div>}
                     {draft && draft.baseText !== line.text && <p className="transcription-line-warning">This reading changed in another tab. Your unsaved wording is shown below; compare it before saving.</p>}
-                    <label>Text for the Word document<textarea aria-label={`Text for line ${index + 1}`} rows={2} value={draft?.text ?? line.text} disabled={!!busy || session.status !== "ready" || line.dismissed} onChange={(event) => editLine(line, { text: event.target.value })} /></label>
-                    <label className="transcription-check"><input type="checkbox" checked={draft?.paragraphBreak ?? line.paragraphBreak} disabled={!!busy || session.status !== "ready" || line.dismissed} onChange={(event) => editLine(line, { paragraphBreak: event.target.checked })} />Start a new paragraph here</label>
-                    {line.source === "ocr" && <details className="transcription-original-reading"><summary>Original machine reading{line.text !== line.ocrText ? " · edited during review" : ""}</summary><p>{line.ocrText || "No readable text returned."}</p>{line.ocrAlternatives.map((text) => <button key={text} disabled={!!busy || session.status !== "ready" || line.dismissed} onClick={() => editLine(line, { text })}>Use other reading: {text}</button>)}</details>}
+                    <label>Text for the Word document<textarea aria-label={`Text for line ${index + 1}`} rows={2} value={draft?.text ?? line.text} disabled={actionBusy || session.status !== "ready" || line.dismissed} onChange={(event) => editLine(line, { text: event.target.value })} /></label>
+                    <label className="transcription-check"><input type="checkbox" checked={draft?.paragraphBreak ?? line.paragraphBreak} disabled={actionBusy || session.status !== "ready" || line.dismissed} onChange={(event) => editLine(line, { paragraphBreak: event.target.checked })} />Start a new paragraph here</label>
+                    {line.source === "ocr" && <details className="transcription-original-reading"><summary>Original machine reading{line.text !== line.ocrText ? " · edited during review" : ""}</summary>{line.originalCropUrl && line.originalCropUrl !== line.cropUrl && <img className="transcription-crop" src={line.originalCropUrl} alt={`Original detected crop for line ${index + 1}`} />}<p>{line.ocrText || "No readable text returned."}</p>{line.ocrAlternatives.map((text) => <button key={text} disabled={actionBusy || session.status !== "ready" || line.dismissed || !!line.recognitionCandidate} onClick={() => editLine(line, { text })}>Use other reading: {text}</button>)}</details>}
+                    {line.recognitionHistory.length > 0 && <details className="transcription-original-reading"><summary>Recognition history · {line.recognitionHistory.length} {line.recognitionHistory.length === 1 ? "attempt" : "attempts"}</summary>{line.recognitionHistory.map((attempt, attemptIndex) => <div key={attempt.id} className="transcription-recognition-history"><span>Attempt {attemptIndex + 1}</span><img className="transcription-crop" src={attempt.cropUrl} alt={`Selection used for attempt ${attemptIndex + 1}`} /><p>{attempt.text || "No readable text returned."}</p></div>)}</details>}
                     {line.warning && <p className="transcription-line-warning">{line.warning}</p>}
-                    <div className="transcription-line-buttons">{line.dismissed ? <button className="doc-button compact" disabled={!!busy} onClick={() => void restoreLine(line)}><RotateCcw size={14} /> Restore line</button> : <>
-                      <button className="doc-button compact primary" disabled={!!busy || session.status !== "ready" || !(draft?.text ?? line.text).trim()} onClick={() => void saveLine(line)}><Check size={14} />{draft ? "Save and confirm" : "Confirm reading"}</button>
-                      <button className="transcription-quiet" disabled={!!busy || session.status !== "ready"} onClick={() => void saveLine(line, true)}>Omit this line</button>
-                      {draft && <button className="transcription-quiet" disabled={!!busy} onClick={() => setDrafts((current) => { const next = { ...current }; delete next[line.id]; return next; })}>Discard edits</button>}
+                    <div className="transcription-line-buttons">{line.dismissed ? <button className="doc-button compact" disabled={actionBusy} onClick={() => void restoreLine(line)}><RotateCcw size={14} /> Restore line</button> : <>
+                      <button className="doc-button compact primary" disabled={actionBusy || session.status !== "ready" || !!line.recognitionCandidate || !(draft?.text ?? line.text).trim()} onClick={() => void saveLine(line)}><Check size={14} />{draft ? "Save and confirm" : "Confirm reading"}</button>
+                      <button className="transcription-quiet" disabled={actionBusy || session.status !== "ready" || !!line.recognitionCandidate} onClick={() => void saveLine(line, true)}>Omit this line</button>
+                      {draft && <button className="transcription-quiet" disabled={actionBusy} onClick={() => setDrafts((current) => { const next = { ...current }; delete next[line.id]; return next; })}>Discard edits</button>}
                     </>}</div>
                   </div>}
                 </li>;
@@ -311,16 +382,17 @@ export default function TranscriptionApp() {
             </ol>
             {session.status === "ready" && <div className="transcription-add">
               {!adding ? <button className="transcription-quiet" onClick={() => { setAdding(true); setAddAfter(selectedId ?? session.lines.at(-1)?.id ?? null); }}><Plus size={14} /> Add text the reader missed</button> : <div className="transcription-manual-form">
-                <label>Insert after<select value={addAfter ?? ""} disabled={!!busy} onChange={(event) => setAddAfter(event.target.value || null)}><option value="">Beginning of the page</option>{session.lines.map((line, index) => <option key={line.id} value={line.id}>Line {index + 1}: {line.text.slice(0, 55)}</option>)}</select></label>
-                <label>Missing text<textarea value={manualText} disabled={!!busy} onChange={(event) => setManualText(event.target.value)} rows={3} /></label>
-                <div><button className="doc-button compact" disabled={!!busy || !manualText.trim()} onClick={() => void addLine()}>Add to transcription</button><button className="transcription-quiet" disabled={!!busy} onClick={() => { setAdding(false); setManualText(""); }}>Cancel</button></div>
+                <label>Insert after<select value={addAfter ?? ""} disabled={actionBusy} onChange={(event) => setAddAfter(event.target.value || null)}><option value="">Beginning of the page</option>{session.lines.map((line, index) => <option key={line.id} value={line.id}>Line {index + 1}: {line.text.slice(0, 55)}</option>)}</select></label>
+                <label>Missing text<textarea value={manualText} disabled={actionBusy} onChange={(event) => setManualText(event.target.value)} rows={3} /></label>
+                <div><button className="doc-button compact" disabled={actionBusy || !manualText.trim()} onClick={() => void addLine()}>Add to transcription</button><button className="transcription-quiet" disabled={actionBusy} onClick={() => { setAdding(false); setManualText(""); }}>Cancel</button></div>
               </div>}
             </div>}
           </>}
           {session.status === "ready" && <div className="transcription-finish">
-            {unresolved > 0 && <div className="transcription-confirm-all"><span>{unresolved} {unresolved === 1 ? "reading still needs" : "readings still need"} your review.</span><button className="doc-button compact" disabled={!!busy || dirty} onClick={() => void mutate("/confirm", {}, "Confirming readings")}>Confirm all readings</button></div>}
-            <label className="transcription-check"><input type="checkbox" checked={completenessChecked} disabled={!!busy || dirty || unresolved > 0 || !included || session.pageReviewed} onChange={(event) => setCompletenessChecked(event.target.checked)} />I checked the entire page for missing text and paragraph order.</label>
-            {!session.pageReviewed ? <button className="doc-button compact" disabled={!!busy || dirty || unresolved > 0 || !included || !completenessChecked} onClick={() => void mutate("/review", {}, "Saving page review")}>Finish page review</button> : <p className="transcription-complete"><Check size={15} />Page review saved. Ready for Word.</p>}
+            {pendingChoices > 0 && <p className="transcription-line-warning">Choose whether to use each new reading or keep your current text before confirming.</p>}
+            {unresolved > 0 && <div className="transcription-confirm-all"><span>{unresolved} {unresolved === 1 ? "reading still needs" : "readings still need"} your review.</span><button className="doc-button compact" disabled={actionBusy || dirty || pendingChoices > 0} onClick={() => void mutate("/confirm", {}, "Confirming readings")}>Confirm all readings</button></div>}
+            <label className="transcription-check"><input type="checkbox" checked={completenessChecked} disabled={actionBusy || dirty || unresolved > 0 || !included || session.pageReviewed} onChange={(event) => setCompletenessChecked(event.target.checked)} />I checked the entire page for missing text and paragraph order.</label>
+            {!session.pageReviewed ? <button className="doc-button compact" disabled={actionBusy || dirty || unresolved > 0 || !included || !completenessChecked} onClick={() => void mutate("/review", {}, "Saving page review")}>Finish page review</button> : <p className="transcription-complete"><Check size={15} />Page review saved. Ready for Word.</p>}
             {session.export && <a className="transcription-audit" href={session.export.auditUrl} download>Download original readings and reviewed text</a>}
           </div>}
         </section>
