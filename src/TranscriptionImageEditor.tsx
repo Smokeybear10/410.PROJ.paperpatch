@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { LoaderCircle, RotateCcw, RotateCw } from "lucide-react";
+import { z } from "zod";
 
 export type Selection = [number, number, number, number];
 export type Preparation = { rotation: number; straighten: number; crop: Selection };
@@ -9,6 +10,7 @@ type Corner = "nw" | "ne" | "sw" | "se";
 type Drag = { kind: "draw" | "move" | Corner; origin: Point; selection: Selection };
 const fullPage: Selection = [0, 0, 1, 1];
 const clamp = (value: number, low = 0, high = 1) => Math.max(low, Math.min(high, value));
+const straighteningSchema = z.object({ angle: z.number().min(-10).max(10).nullable(), message: z.string().trim().min(1).max(500) });
 
 function rotatedSize(width: number, height: number, clockwise: number): Point {
   if (clockwise % 90 === 0) return clockwise % 180 === 0 ? [width, height] : [height, width];
@@ -108,6 +110,9 @@ export function PhotoPreparation({ file, busy, onCancel, onRead }: {
   const [crop, setCrop] = useState<Selection>(fullPage);
   const [preview, setPreview] = useState<{ url: string; ratio: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  const [straighteningNote, setStraighteningNote] = useState<{ text: string; failed: boolean } | null>(null);
+  const disabled = busy || estimating;
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
@@ -140,26 +145,52 @@ export function PhotoPreparation({ file, busy, onCancel, onRead }: {
   }, [image, rotation, straighten]);
 
   function rotate(amount: number) {
-    setRotation((value) => (value + amount + 360) % 360); setCrop(fullPage);
+    setRotation((value) => (value + amount + 360) % 360); setCrop(fullPage); setStraighteningNote(null);
+  }
+
+  async function autoStraighten() {
+    if (disabled || !preview || error) return;
+    setEstimating(true); setStraighteningNote(null);
+    const form = new FormData();
+    form.append("file", file); form.append("rotation", String(rotation));
+    const fallback = "Could not estimate the angle. Your settings are unchanged; try again or straighten manually.";
+    try {
+      const response = await fetch("/api/transcriptions/straightening", { method: "POST", body: form });
+      const data: unknown = await response.json();
+      if (!response.ok) {
+        const detail = z.object({ detail: z.string().trim().min(1) }).safeParse(data);
+        setStraighteningNote({ text: detail.success ? detail.data.detail : fallback, failed: true });
+        return;
+      }
+      const result = straighteningSchema.safeParse(data);
+      if (!result.success) { setStraighteningNote({ text: fallback, failed: true }); return; }
+      if (result.data.angle !== null && result.data.angle !== straighten) { setStraighten(result.data.angle); setCrop(fullPage); }
+      setStraighteningNote({ text: result.data.message, failed: false });
+    } catch {
+      setStraighteningNote({ text: fallback, failed: true });
+    } finally { setEstimating(false); }
   }
 
   return <section className="transcription-preparation" aria-label="Prepare handwritten page">
     <div className="transcription-preparation-title"><h2>Prepare page</h2><span>{file.name}</span></div>
     <p>Make the writing level, then drag around the text you want to read.</p>
     <div className="transcription-photo-tools">
-      <button className="doc-button compact" disabled={busy || !image} onClick={() => rotate(-90)}><RotateCcw size={15} />Rotate left</button>
-      <button className="doc-button compact" disabled={busy || !image} onClick={() => rotate(90)}><RotateCw size={15} />Rotate right</button>
-      <button className="transcription-quiet" disabled={busy || !image} onClick={() => { setRotation(0); setStraighten(0); setCrop(fullPage); }}>Reset photo</button>
+      <button className="doc-button compact" disabled={disabled || !image} onClick={() => rotate(-90)}><RotateCcw size={15} />Rotate left</button>
+      <button className="doc-button compact" disabled={disabled || !image} onClick={() => rotate(90)}><RotateCw size={15} />Rotate right</button>
+      <button className="doc-button compact" disabled={disabled || !preview || !!error} onClick={() => void autoStraighten()}>{estimating && <LoaderCircle size={15} className="transcription-spinner" />}{estimating ? "Finding angle…" : "Auto straighten"}</button>
+      <button className="transcription-quiet" disabled={disabled || !image} onClick={() => { setRotation(0); setStraighten(0); setCrop(fullPage); setStraighteningNote(null); }}>Reset photo</button>
     </div>
-    <label className="transcription-straighten">Straighten <input type="range" min={-15} max={15} step={.25} value={straighten} disabled={busy || !image}
-      onChange={(event) => { setStraighten(Number(event.target.value)); setCrop(fullPage); }} /><output>{straighten > 0 ? "+" : ""}{straighten}°</output></label>
+    <label className="transcription-straighten">Straighten <input type="range" min={-15} max={15} step={.25} value={straighten} disabled={disabled || !image}
+      onChange={(event) => { setStraighten(Number(event.target.value)); setCrop(fullPage); setStraighteningNote(null); }} /><output>{straighten > 0 ? "+" : ""}{straighten}°</output></label>
     <p className="transcription-photo-help">Straightening resets the selection. Keep the whole line, including punctuation.</p>
+    {estimating && <p role="status">Checking line alignment…</p>}
+    {straighteningNote && <p className={straighteningNote.failed ? "transcription-line-warning" : "transcription-photo-help"} role={straighteningNote.failed ? "alert" : "status"}>{straighteningNote.text}</p>}
     {error ? <p className="transcription-line-warning" role="alert">{error}</p> : preview ? <div className="transcription-preparation-image" style={{ maxWidth: `min(100%, calc(60vh * ${preview.ratio}))` }}>
-      <ImageSelection src={preview.url} alt={`Page preparation preview: ${file.name}`} selection={crop} onChange={setCrop} disabled={busy} />
+      <ImageSelection src={preview.url} alt={`Page preparation preview: ${file.name}`} selection={crop} onChange={setCrop} disabled={disabled} />
     </div> : <p role="status"><LoaderCircle className="transcription-spinner" size={16} /> Opening image…</p>}
-    <div className="transcription-preparation-actions"><button className="doc-button primary" disabled={busy || !preview || !!error} onClick={() => onRead({ rotation, straighten, crop })}>
+    <div className="transcription-preparation-actions"><button className="doc-button primary" disabled={disabled || !preview || !!error} onClick={() => onRead({ rotation, straighten, crop })}>
       {busy && <LoaderCircle size={16} className="transcription-spinner" />}{busy ? "Uploading page…" : "Read this page"}</button>
-      <button className="transcription-quiet" disabled={busy} onClick={onCancel}>Choose another image</button></div>
+      <button className="transcription-quiet" disabled={disabled} onClick={onCancel}>Choose another image</button></div>
     <p className="transcription-photo-help">Your original upload is retained. These adjustments only change the reading copy.</p>
   </section>;
 }

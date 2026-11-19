@@ -1,6 +1,6 @@
 # PAPERPATCH | Paper to Word
 
-**[Download the v0.2.0 test build](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest)** · **[Watch the handwriting walkthrough](https://www.youtube.com/watch?v=8ynWF660iV0)**
+**[Download the v0.2.1 test build](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest)** · **[Watch the handwriting walkthrough](https://www.youtube.com/watch?v=8ynWF660iV0)**
 
 Review handwritten corrections against Word drafts, or transcribe a handwritten page into an editable document.
 
@@ -25,7 +25,7 @@ Open http://localhost:7171 and choose **Open Word file** or **Open handwriting**
 
 No API key is required. OCR setup downloads two pinned PP-OCRv6 models; recognition runs locally afterward. Skip `npm run setup:document-ocr` to use the prepared example or enter corrections manually. Document reviews stay in `.data/documents/`; handwritten-page transcriptions stay in `.data/transcriptions/`.
 
-The v0.2.0 test build includes both handwritten-page transcription and paper-correction review. The older v0.1.1 release only contains the correction workflow.
+The v0.2.1 test build includes both handwritten-page transcription and paper-correction review. The older v0.1.1 release only contains the correction workflow.
 
 The [release ZIP](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/latest/download/paperpatch-test-build.zip) includes the compiled interface. With `uv` installed, extract it and run `./run-paperpatch.sh` from its `paperpatch` directory; Node.js is not needed. Initial setup requires internet access. Use `./run-paperpatch.sh --skip-ocr` for the prepared example. The launcher has been checked on macOS; Linux and Windows execution have not been validated.
 
@@ -47,7 +47,7 @@ The [release ZIP](https://github.com/Smokeybear10/410.PROJ.paperpatch/releases/l
 **Transcribe a handwritten page**
 
 - Upload a real scan or photograph directly, without an existing Word draft. The local reader detects text lines and reads their actual image crops.
-- Rotate, straighten, and crop the reading copy before recognition. The original uploaded file stays intact.
+- Rotate, straighten, and crop the reading copy before recognition. Auto straighten suggests an angle for you to check in the preview; manual adjustment stays available. The original uploaded file stays intact.
 - Compare the original page and each crop with its reading. Correct mistakes, add missed text, omit false detections, and check the entire page before export.
 - Adjust a detected line's selection and read it again. Accept or reject the new suggestion explicitly; the initial machine reading and retry history remain available. Accepting a suggestion still requires confirmation before export.
 - Download editable Word text with the reviewed paragraph order and source line breaks. The original upload, raw OCR, and reviewed text remain available separately.

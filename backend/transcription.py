@@ -22,7 +22,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.document_ocr import METADATA, recognize_handwriting_candidates
 from backend.paper import MAX_IMAGE_BYTES, OCR_LOCK
-from backend.transcription_image import prepare_transcription_image
+from backend.transcription_image import (
+    estimate_transcription_straightening, prepare_transcription_image, transcription_source_mask,
+)
 
 
 DATA = Path(__file__).resolve().parent.parent / '.data' / 'transcriptions'
@@ -167,10 +169,17 @@ def changed(session: dict) -> dict:
     return present(session)
 
 
-def detect_lines(image: np.ndarray) -> list[tuple[int, int, int, int]]:
+def detect_lines(image: np.ndarray, source_mask: np.ndarray | None = None) -> list[tuple[int, int, int, int]]:
     height, width = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    if source_mask is None:
+        mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    else:
+        if not source_mask.any():
+            return []
+        threshold = cv2.threshold(gray[source_mask].reshape(-1, 1), 0, 255,
+                                  cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[0]
+        mask = np.where(source_mask & (gray <= threshold), 255, 0).astype(np.uint8)
     count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
     components = []
     keep = np.zeros(count, dtype=bool)
@@ -215,8 +224,11 @@ def detect_lines(image: np.ndarray) -> list[tuple[int, int, int, int]]:
 def read_page(sid: str, image: np.ndarray) -> None:
     started = perf_counter()
     try:
-        rectangles = detect_lines(image)
         height, width = image.shape[:2]
+        with LOCK:
+            preparation = load(sid).get('preparation')
+        source_mask = transcription_source_mask((width, height), preparation)
+        rectangles = detect_lines(image, source_mask)
         truncated = len(rectangles) > MAX_LINES
         rectangles = rectangles[:MAX_LINES]
         typical_height = float(np.median([bottom - top for _, top, _, bottom in rectangles])) if rectangles else 0
@@ -275,6 +287,23 @@ def read_page(sid: str, image: np.ndarray) -> None:
         SLOTS.release()
 
 
+@router.post('/straightening')
+def suggest_straightening(file: UploadFile, rotation: int = Form(0)) -> dict:
+    if not SLOTS.acquire(blocking=False):
+        raise HTTPException(429, 'The page reader is busy. Wait for a reading to finish, then try again.')
+    try:
+        data = file.file.read(MAX_IMAGE_BYTES + 1)
+        if len(data) > MAX_IMAGE_BYTES:
+            raise ValueError('Photo exceeds the 20 MB limit.')
+        suggestion = estimate_transcription_straightening(data, rotation)
+        with Image.open(BytesIO(data)) as source:
+            if source.format not in ('JPEG', 'PNG', 'WEBP'):
+                raise ValueError('Upload one JPEG, PNG, or WebP page.')
+        return suggestion
+    finally:
+        SLOTS.release()
+
+
 @router.post('')
 def upload_page(file: UploadFile, preparation: str | None = Form(None)) -> dict:
     if not SLOTS.acquire(blocking=False):
@@ -311,7 +340,7 @@ def upload_page(file: UploadFile, preparation: str | None = Form(None)) -> dict:
                        error=None, pageReviewed=False, export=None,
                        pendingRecognition=None,
                        preparation=preparation_meta,
-                       recognizer={**METADATA, 'lineDetection': 'Single-column horizontal ink projection with component filtering and midpoint line boundaries.',
+                       recognizer={**METADATA, 'lineDetection': 'Single-column horizontal ink projection with component filtering and midpoint line boundaries; synthetic rotation borders excluded from threshold estimation and line detection.',
                                    'capturePreprocessing': 'EXIF orientation; maximum 3300 pixels per side; optional user-selected clockwise rotation, fine straightening and crop recorded in preparation; rectangular crops from the prepared page. Original upload preserved.'},
                        _files={original_name: {'mediaType': content_type}, 'page.png': {'mediaType': 'image/png'}})
         with LOCK:
